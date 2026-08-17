@@ -80,7 +80,7 @@ volumes:
   nekro_postgres_data:
     name: ${INSTANCE_NAME:-}nekro_postgres_data
   nekro_qdrant_data:
-    name: ${INSTANCE_NAME}nekro_qdrant_data
+    name: ${INSTANCE_NAME:-}nekro_qdrant_data
 
 networks:
   nekro_network:

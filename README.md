@@ -182,6 +182,10 @@ sudo docker logs nekro2_nekro_napcat | grep "二维码解码URL"
 
 > 提示：本模板使用 `mlikiowa/napcat-docker:v4.15.0`（旧架构，社区公认较稳）。若换新版注意登录数据不兼容。
 
+> ⚠️ **NapCat WebSocket 端口十分关键**：扫码登录后，需在 NapCat WebUI 的「网络配置」里新建/修改 OneBot 11 WebSocket 连接，**地址必须填写 `ws://<NekroAgent容器名>:8021/onebot/v11/ws`**（实例 2 为 `ws://nekro2_nekro_agent:8021/...`），即**容器内网络端口 8021**，而不是宿主机端口（`8021` 是容器内端口，宿主映射为 `NEKRO_EXPOSE_PORT`）。填成宿主机 IP + 宿主端口会报 `ECONNREFUSED`。
+>
+> 另外，豆包 TTS 语音合成需要 NekroAgent 容器能访问宿主机 bridge，详见 [第 6 步](#6-桥接可选-stackchan-设备需要) 的 `TTS_BRIDGE_URL` 说明。
+
 ### 3. 应用补丁
 
 把 `patches/` 下两个文件放到每个实例的数据目录下的 `patches/` 子目录中：
@@ -208,6 +212,15 @@ volumes:
 - `commands.py`：修复设备（SSE）频道被误标为群聊的问题
 
 > 补丁是 bind mount 覆盖框架源码，**镜像升级后需重新打补丁**。
+
+> 💡 **TTS 桥接地址（多实例必看）**：`adapter.py` 的 QQ 语音合成会调用宿主机的 bridge HTTP API，地址读取环境变量 `TTS_BRIDGE_URL`，**默认值 `http://172.21.0.1:8090/api/tts` 只对实例 1（bridge 8090）有效**。实例 2 的 bridge 在 8091、实例 3 在 8092，必须在对应 compose 的 `environment` 中追加（`172.21.0.1` 是 Docker 默认网关，指向宿主机）：
+>
+> ```bash
+> export TTS_BRIDGE_URL=http://172.21.0.1:8091/api/tts   # 实例 2
+> # 实例 3 用 8092，依此类推
+> ```
+>
+> 若所有实例共用同一 bridge 端口也可全部指定同一地址。**不设置时语音功能静默失败（返回空白，不影响文字）**，排查语音问题时先确认此变量。
 
 ### 4. 配置模型组与人设
 
@@ -241,8 +254,10 @@ volumes:
 ```bash
 cp bots.example.json bots.json        # 填入 Bot 的容器名、URL、token、密码
 cp .env.example .env                  # 按需填环境变量
-python3 bot_monitor.py
+setsid nohup python3 bot_monitor.py > bot_monitor.log 2>&1 < /dev/null &
 ```
+
+> ⚠️ 面板启动后不要关闭终端。上面的 `setsid nohup ... &` 命令会让面板在 SSH 断开后持续运行。若用普通 `nohup ... &`，SSH 退出后进程可能被 SIGHUP 杀掉。如需重启，先 `kill $(pgrep -f bot_monitor.py)` 再重新执行上述命令。
 
 访问 `http://服务器IP:8080` 打开监控面板，`/chat` 打开网页聊天。
 
@@ -286,6 +301,8 @@ sudo systemctl enable --now nekro-bridge.service
 | `OWNER_QQ` / `OWNER_NAME` | 设备消息发送者的 QQ/名字 | 各实例相同 |
 
 > ⚠️ 服务名务必与 `bots.json` 里的 `bridge_service` 字段一致（默认 `nekro-bridge` / `nekro-bridge2` / …），否则面板读不到 bridge 状态。
+
+> 🔑 **TTS 密钥只放环境变量，别改代码**：`bridge.py` 里 `TTS_API_KEY` 的默认值应为**空字符串**，你的真实密钥**必须**写在 systemd 的 `Environment=TTS_API_KEY=你的密钥` 一行（同样 `TTS_RESOURCE_ID`、`TTS_VOICE` 都通过环境变量传入）。**请勿把真实密钥硬编码进 `bridge.py`**——本仓库是开源的，写进代码等于公开密钥。如果是从旧版本升级，先检查 `/opt/nekro-bridge/bridge.py` 开头有没有残留的硬编码密钥，有的话删掉并改用环境变量，然后 `sudo systemctl restart nekro-bridge`。
 
 ### 7. 小智设备（可选，实体语音）
 

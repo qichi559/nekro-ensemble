@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Bot 1",
+    "role": "角色A的名字",
+    "qq": "123456789",
+    "nekro_container": "nekro_agent",
+    "napcat_container": "nekro_napcat",
+    "nekro_url": "http://你的服务器IP:8021/webui/",
+    "napcat_url": "http://你的服务器IP:6099",
+    "napcat_token": "填NapCat的WebUI token",
+    "nekro_token": "填Nekro的access token",
+    "admin_password": "填Nekro的admin密码",
+    "nekro_username": "admin",
+    "napcat_http_port": 3000,
+    "bridge_port": 8090,
+    "bridge_service": "nekro-bridge",
+    "postgres_container": "nekro_postgres",
+    "data_dir": "/home/youruser/srv/nekro_agent"
+  },
+  {
+    "name": "Bot 2",
+    "role": "角色B的名字",
+    "qq": "987654321",
+    "nekro_container": "nekro2_nekro_agent",
+    "napcat_container": "nekro2_nekro_napcat",
+    "nekro_url": "http://你的服务器IP:8022/webui/",
+    "napcat_url": "http://你的服务器IP:6100",
+    "napcat_token": "填NapCat的WebUI token",
+    "nekro_token": "填Nekro的access token",
+    "admin_password": "填Nekro的admin密码",
+    "nekro_username": "admin",
+    "napcat_http_port": 3001,
+    "bridge_port": 8091,
+    "bridge_service": "nekro-bridge2",
+    "postgres_container": "nekro2_nekro_postgres",
+    "data_dir": "/home/youruser/srv/nekro_agent2"
+  }
+]

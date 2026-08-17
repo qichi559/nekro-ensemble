@@ -1,0 +1,25 @@
+# 环境变量与密钥
+.env
+*.env
+!.env.example
+
+# Bot 配置（含 token/密码）
+bots.json
+
+# NapCat QQ 登录态
+napcat_data/
+
+# 日志
+*.log
+logs/
+
+# 备份文件
+*.bak
+*.bak.*
+
+# Python
+__pycache__/
+*.pyc
+
+# 模型组配置（含 API key）
+configs/nekro-agent.yaml

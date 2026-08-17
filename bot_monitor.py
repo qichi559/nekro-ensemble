@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-小栖bot - NekroAgent & NapCat 三Bot实时监控面板 (PWA v3)
+小栖bot - NekroAgent & NapCat 多Bot实时监控面板 (PWA v3)
 功能: 容器控制 / 日志查看 / Token免输入 / PWA
 """
 
@@ -549,7 +549,7 @@ def collect_data():
         bot_data["bridge_service"] = bridge_services[i] if i < len(bridge_services) else ""
     # 额外服务监控（已精简）
     extra_services = collect_extra_services(statuses, stats)
-    # 笔记同步状态（三bot）
+    # 笔记同步状态（各 bot）
     note_sync = check_note_sync()
     # 小智LLM模式 + 设备状态
     llm_mode = get_llm_mode()
@@ -842,7 +842,7 @@ def prettify_model(name):
 
 
 def fetch_nekro_model_groups():
-    """从三个 bot 拉取并合并聊天模型组列表（按 group_name 去重），返回 ([...], err)"""
+    """从各 bot 拉取并合并聊天模型组列表（按 group_name 去重），返回 ([...], err)"""
     merged = {}
     err = None
     for bot_index in range(len(BOTS)):
@@ -1009,7 +1009,7 @@ def _nekro_config_request(bot_index, path, method="GET", body=None):
 
 
 def apply_model_to_all(group_name, chat_model=None, base_url=None, api_key=None):
-    """切换三个 bot 的 USE_MODEL_GROUP（目标组在别的 bot 存在则自动同步创建），不重启"""
+    """切换各 bot 的 USE_MODEL_GROUP（目标组在别的 bot 存在则自动同步创建），不重启"""
     import urllib.parse as _up
     _gq = _up.quote(group_name, safe="")
     # 1. 先找目标组的完整配置（从任意有该组的 bot）
@@ -1020,7 +1020,7 @@ def apply_model_to_all(group_name, chat_model=None, base_url=None, api_key=None)
             group_config = result[group_name]
             break
     if group_config is None:
-        # 三个 bot 都没有，用传入参数构造
+        # 各 bot 都没有，用传入参数构造
         if not chat_model or not base_url:
             return False, f"组 {group_name} 不存在且缺少模型信息"
         group_config = {

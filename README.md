@@ -1,4 +1,4 @@
-# 三 Bot AI 角色语音系统
+# 多 Bot AI 角色语音系统
 
 > **本项目基于 [NekroAgent](https://github.com/KroMiose/nekro-agent) 构建**，并遵循 Nekro Agent 开源协议 V1.1。详见 [`NEKRO_LICENSE`](./NEKRO_LICENSE) 与 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)。
 
@@ -158,7 +158,7 @@ sudo docker logs napcat | grep "二维码解码URL"
 sudo docker cp napcat:/app/napcat/cache/qrcode.png .
 ```
 
-用对应 Bot 的 QQ 扫码登录。三个 Bot 重复三次。
+用对应 Bot 的 QQ 扫码登录，每个 Bot 重复一次。
 
 > 提示：本模板使用 `mlikiowa/napcat-docker:v4.15.0`（旧架构，社区公认较稳）。若换新版注意登录数据不兼容。
 
@@ -286,6 +286,10 @@ python3 bridge/bridge.py
 2. 把情感传给 bridge 的 TTS 接口，合成对应语气的语音
 
 这样语音的情感就不再靠关键词瞎猜，而是由 LLM 显式指定。
+
+> **提醒**：需要在每个角色的人设（Preset）里加入下面这段指令，LLM 才会输出情感标签：
+
+> 【语音情感标注】每次回复必须先从以下 17 种类型中选一个，在回复正文最前面用 `[[emotion:类型]]` 开头标注（仅用于语音合成，不显示给用户），然后再写正文：tsundere傲娇、charming娇媚、happy开心、sad难过、angry生气、scare害怕、surprise惊讶、tear哭腔、lovey-dovey撒娇、comfort安慰、energetic元气、annoyed嗔怪、pleased愉悦、sorry抱歉、conniving绿茶、storytelling讲故事、novel_dialog平和。即使没有强烈情感，也必须选最接近的一种标注，禁止不标注；严格禁止使用列表以外的任何类型（如 shy、sleepy 等一律禁用），禁止自创。回复分多段时，每段都要标注。
 
 ---
 

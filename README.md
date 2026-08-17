@@ -142,6 +142,12 @@ export NEKRO_DATA_DIR=$HOME/srv/nekro_agent
 export INSTANCE_NAME=""            # 单实例留空
 export NEKRO_EXPOSE_PORT=8021
 export NAPCAT_EXPOSE_PORT=6099
+export ONEBOT_ACCESS_TOKEN=你的QQ协议token   # 与 NA 后台 OneBot 配置一致
+export NEKRO_ADMIN_PASSWORD=你的管理员密码    # 首次部署设，之后可在后台改
+export POSTGRES_USER=nekro_agent
+export POSTGRES_PASSWORD=nekro_agent
+export POSTGRES_DATABASE=nekro_agent
+export QDRANT_API_KEY=                      # 向量数据库密钥（可选）
 sudo -E docker compose -f deploy/docker-compose.yml up -d
 
 # 实例 2（复制数据目录后，改前缀和端口）
@@ -149,6 +155,12 @@ export NEKRO_DATA_DIR=$HOME/srv/nekro_agent2
 export INSTANCE_NAME="nekro2_"     # 容器名会变成 nekro2_nekro_agent 等
 export NEKRO_EXPOSE_PORT=8022
 export NAPCAT_EXPOSE_PORT=6100
+export ONEBOT_ACCESS_TOKEN=你的QQ协议token   # 多实例可共用相同 token
+export NEKRO_ADMIN_PASSWORD=你的管理员密码
+export POSTGRES_USER=nekro_agent
+export POSTGRES_PASSWORD=nekro_agent
+export POSTGRES_DATABASE=nekro_agent
+export QDRANT_API_KEY=
 sudo -E docker compose -f deploy/docker-compose.yml up -d
 ```
 
@@ -205,6 +217,24 @@ volumes:
 - **角色人设**：后台「人设（Preset）」页创建
 
 > 面板支持运行时切换模型组，切完立即生效、无需重启。
+
+### 4.5. 配置适配器（关键！）
+
+首次部署后，需要进 NekroAgent 后台启用两个适配器，否则 QQ 链路和设备链路都不工作：
+
+**① OneBot 适配器（QQ 链路）**
+
+进入后台「适配器」→「OneBot V11」配置：
+- `BOT_QQ`：填这个 Bot 的 QQ 号
+- `access_token`：填你在 Step 1 中 `export ONEBOT_ACCESS_TOKEN=` 设的值，两者必须一致
+
+**② SSE 适配器（设备链路，桥接需要）**
+
+进入后台「适配器」→「SSE」配置：
+- 确认适配器已启用（`ENABLED=true`）
+- 设置一个 `access_key`（任意字符串），**记下这个值**，后面配置 bridge 的 systemd 服务时要用到
+
+> 两个适配器配置后可能需要重启容器生效：`sudo docker restart <容器名>`
 
 ### 5. 配置监控面板
 

@@ -22,11 +22,11 @@ Environment=NEKRO_BASE_URL=http://127.0.0.1:8021
 Environment=ACCESS_KEY=你的SSE密钥
 # bridge 监听端口：实例1=8090，实例2=8091，实例3=8092
 Environment=LISTEN_PORT=8090
-# bridge 对外 API 的鉴权 key（面板/设备调用 TTS 接口时用）
-Environment=BRIDGE_API_KEY=你的bridge密钥
-Environment=RESPONSE_TIMEOUT=120
 # SSE 频道名，固定为 private_stackchan
 Environment=CHANNEL_ID=private_stackchan
+# 设备消息发送者的 QQ 号和名字（bridge 发给 NekroAgent 时携带）
+Environment=OWNER_QQ=
+Environment=OWNER_NAME=
 # 聊天历史文件，每个实例用不同的文件名
 Environment=CHAT_HISTORY_FILE=/opt/nekro-bridge/chat_history_1.jsonl
 # 豆包 TTS 音色 ID

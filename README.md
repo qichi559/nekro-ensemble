@@ -134,7 +134,7 @@ sudo -E bash -c "$(curl -fsSL https://raw.githubusercontent.com/KroMiose/nekro-a
 
 **方式 B：用本仓库的编排模板**
 
-参考 `deploy/docker-compose.yml`。多实例时复制数据目录，并修改 `.env` 中的端口与 `INSTANCE_NAME`：
+参考 `deploy/docker-compose.yml`。在仓库根目录执行：
 
 ```bash
 # 实例 1
@@ -142,12 +142,14 @@ export NEKRO_DATA_DIR=$HOME/srv/nekro_agent
 export INSTANCE_NAME=""            # 单实例留空
 export NEKRO_EXPOSE_PORT=8021
 export NAPCAT_EXPOSE_PORT=6099
+sudo -E docker compose -f deploy/docker-compose.yml up -d
 
-# 实例 2（复制后改前缀）
+# 实例 2（复制数据目录后，改前缀和端口）
 export NEKRO_DATA_DIR=$HOME/srv/nekro_agent2
 export INSTANCE_NAME="nekro2_"     # 容器名会变成 nekro2_nekro_agent 等
 export NEKRO_EXPOSE_PORT=8022
 export NAPCAT_EXPOSE_PORT=6100
+sudo -E docker compose -f deploy/docker-compose.yml up -d
 ```
 
 > ⚠️ 容器名与端口务必和 `bots.json` 里填的一致。
@@ -155,9 +157,13 @@ export NAPCAT_EXPOSE_PORT=6100
 ### 2. NapCat 登录
 
 ```bash
-sudo docker logs napcat | grep "二维码解码URL"
+# 实例 1
+sudo docker logs nekro_napcat | grep "二维码解码URL"
 # 或取出二维码图片
-sudo docker cp napcat:/app/napcat/cache/qrcode.png .
+sudo docker cp nekro_napcat:/app/napcat/cache/qrcode.png .
+
+# 实例 2（容器名前缀为 nekro2_）
+sudo docker logs nekro2_nekro_napcat | grep "二维码解码URL"
 ```
 
 用对应 Bot 的 QQ 扫码登录，每个 Bot 重复一次。
@@ -166,7 +172,19 @@ sudo docker cp napcat:/app/napcat/cache/qrcode.png .
 
 ### 3. 应用补丁
 
-把 `patches/` 下两个文件放到每个实例的数据目录，并在 compose 中挂载：
+把 `patches/` 下两个文件放到每个实例的数据目录下的 `patches/` 子目录中：
+
+```bash
+# 实例 1
+mkdir -p $HOME/srv/nekro_agent/patches
+cp patches/adapter.py patches/commands.py $HOME/srv/nekro_agent/patches/
+
+# 实例 2
+mkdir -p $HOME/srv/nekro_agent2/patches
+cp patches/adapter.py patches/commands.py $HOME/srv/nekro_agent2/patches/
+```
+
+然后在 compose 中挂载（`deploy/docker-compose.yml` 已自带这两行，确认路径正确即可）：
 
 ```yaml
 volumes:
@@ -207,6 +225,8 @@ python3 bot_monitor.py
 ```bash
 sudo mkdir -p /opt/nekro-bridge
 # 把 bridge/bridge.py 复制到 /opt/nekro-bridge/
+# 注意：以下命令在仓库根目录执行
+sudo cp bridge/bridge.py /opt/nekro-bridge/
 sudo pip install -r bridge/requirements.txt
 ```
 
@@ -304,6 +324,10 @@ services:
 | `SITE_PASSWORD` | 面板访问密码 | 留空则随机生成 |
 | `USER_QQ` | 你的 QQ 号（网页聊天用户头像） | 空 |
 | `DEVICE_BOT_INDEX` | 设备栏显示在第几个 Bot 卡片（0-based） | `2` |
+| `NOTIFY_QQ` | 掉线通知发到哪个 QQ 号 | 空（不通知） |
+| `EXTRA_DOCKER_CONTAINERS` | 额外监控的 Docker 容器名（逗号分隔） | 空 |
+| `EXTRA_NAV_LINKS` | 面板顶部额外导航链接（JSON 数组） | 空 |
+| `XIAOZHI_CONFIG_PATH` | 小智配置文件路径（面板编辑用） | 空 |
 | `TTS_API_KEY` | 豆包 TTS 密钥（bridge 用） | 空 |
 | `TTS_VOICE` | 豆包 TTS 音色 ID | 空（需自己填） |
 | `TTS_RESOURCE_ID` | 豆包 TTS 资源 ID（音色克隆 `seed-icl` / 通用 `seed-tts`） | 空 |

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-小栖bot - NekroAgent & NapCat 多Bot实时监控面板 (PWA v3)
+小栖bot - NekroAgent & NapCat 多Bot实时监控面板
 功能: 容器控制 / 日志查看 / Token免输入 / PWA
 """
 
@@ -19,6 +19,28 @@ from queue import Queue, Empty
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def _load_dotenv():
+    """加载同目录 .env 文件到环境变量（不覆盖已存在的环境变量）"""
+    env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(env_file):
+        return
+    try:
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception:
+        pass
+
+
+_load_dotenv()
 
 HOST = "0.0.0.0"
 PORT = 8080
@@ -56,21 +78,24 @@ for b in BOTS:
     ALLOWED_CONTAINERS.add(b["nekro_container"])
     ALLOWED_CONTAINERS.add(b["napcat_container"])
 
-# 额外监控的Docker容器（按需添加）
-EXTRA_DOCKER_CONTAINERS = []
+# 额外监控的Docker容器（环境变量逗号分隔，如 "container1,container2"）
+EXTRA_DOCKER_CONTAINERS = [x.strip() for x in os.getenv("EXTRA_DOCKER_CONTAINERS", "").split(",") if x.strip()]
 ALLOWED_CONTAINERS.update(EXTRA_DOCKER_CONTAINERS)
 
 # 额外监控的服务
 EXTRA_SERVICES = []
 
-# 额外导航链接（按需添加，例如其他面板）
-EXTRA_NAV_LINKS = []
+# 额外导航链接（环境变量 EXTRA_NAV_LINKS，JSON 数组格式）
+try:
+    EXTRA_NAV_LINKS = json.loads(os.getenv("EXTRA_NAV_LINKS", "[]"))
+except Exception:
+    EXTRA_NAV_LINKS = []
 
 # 掉线通知配置：接收掉线通知的QQ号，留空则不通知
-NOTIFY_QQ = ""
+NOTIFY_QQ = os.getenv("NOTIFY_QQ", "")
 
 # 小智LLM模式切换配置（可选，无小智部署时留空）
-XIAOZHI_CONFIG_PATH = ""
+XIAOZHI_CONFIG_PATH = os.getenv("XIAOZHI_CONFIG_PATH", "")
 DIRECT_LLM_NAME = "DirectLLM"          # 直连LLM配置名称（需在.config.yaml的LLM段中定义）
 # 设备（小智 stackchan）绑定到第几个 bot 的卡片（0-based，如 2 表示第 3 个 bot；-1 表示无设备）
 DEVICE_BOT_INDEX = int(os.getenv("DEVICE_BOT_INDEX", "2"))
@@ -2619,7 +2644,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
 def main():
     log("=" * 50)
-    log("小栖bot Monitor v27")
+    log("小栖bot Monitor")
     log(f"http://0.0.0.0:{PORT}")
     log(f"Icon: {APP_ICON_TYPE} ({len(APP_ICON)} bytes)")
     docker_ok, docker_ver = check_docker()

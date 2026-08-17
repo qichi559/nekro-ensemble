@@ -100,7 +100,9 @@
 │   ├── adapter.py              # QQ 语音补丁：语音回复 + 情感标注 + 语音开关
 │   └── commands.py             # SSE 补丁：修复 channel_type 被硬编码为 group 的问题
 ├── bridge/
-│   └── bridge.py               # NekroAgent ↔ Stackchan 桥接（含豆包 TTS API）
+│   ├── bridge.py               # NekroAgent ↔ Stackchan 桥接（含豆包 TTS API）
+│   ├── requirements.txt        # bridge 依赖
+│   └── nekro-bridge.service.example  # bridge systemd 服务模板
 ├── tts/
 │   └── doubao_v3.py            # 豆包 TTS provider（小智语音引擎调用）
 └── deploy/
@@ -198,26 +200,75 @@ python3 bot_monitor.py
 
 ### 6. 桥接（可选，Stackchan 设备需要）
 
-每个 Bot 一个 bridge 实例。先安装依赖：
+每个 Bot 一个 bridge 实例，建议用 systemd 常驻（监控面板通过 `systemctl is-active` 检测 bridge 状态）。
+
+**① 准备目录与依赖**
 
 ```bash
-pip install -r bridge/requirements.txt
+sudo mkdir -p /opt/nekro-bridge
+# 把 bridge/bridge.py 复制到 /opt/nekro-bridge/
+sudo pip install -r bridge/requirements.txt
 ```
 
-然后启动（每个 Bot 一个实例，改端口和地址）：
+**② 配置 systemd 服务**
+
+参考 `bridge/nekro-bridge.service.example`，每个实例复制一份，改端口、地址、音色、历史文件：
 
 ```bash
-export LISTEN_PORT=8090          # 对应第 1 个 Bot
-export NEKRO_BASE_URL=http://127.0.0.1:8021
-export ACCESS_KEY=你的SSE访问密钥
-export TTS_API_KEY=你的豆包TTS密钥
-export TTS_VOICE=你的音色ID
-python3 bridge/bridge.py
+sudo cp bridge/nekro-bridge.service.example /etc/systemd/system/nekro-bridge.service
+sudo vim /etc/systemd/system/nekro-bridge.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now nekro-bridge.service
 ```
 
-### 7. 小智设备（可选）
+关键环境变量（多实例的差异）：
 
-设备链路依赖小智 ESP32 server（`xiaozhi-server`），`tts/doubao_v3.py` 是其豆包语音引擎的 provider。若不需要设备链路，跳过本步，并在环境变量中设 `DEVICE_BOT_INDEX=-1` 隐藏设备栏。
+| 变量 | 说明 | 实例1 / 实例2 / 实例3 |
+|---|---|---|
+| `NEKRO_BASE_URL` | 对应 NekroAgent 地址 | 8021 / 8022 / 8023 |
+| `LISTEN_PORT` | bridge 监听端口 | 8090 / 8091 / 8092 |
+| `ACCESS_KEY` | SSE 访问密钥（与 NekroAgent 后台一致） | 各实例相同 |
+| `CHANNEL_ID` | SSE 频道名（固定） | `private_stackchan` |
+| `CHAT_HISTORY_FILE` | 聊天历史文件 | `chat_history_1` / `_2` / … |
+| `TTS_VOICE` | 豆包音色 ID | 每实例可不同 |
+
+> ⚠️ 服务名务必与 `bots.json` 里的 `bridge_service` 字段一致（默认 `nekro-bridge` / `nekro-bridge2` / …），否则面板读不到 bridge 状态。
+
+### 7. 小智设备（可选，实体语音）
+
+设备链路 = 小智后端（xiaozhi-server）+ bridge + 豆包 TTS，三者配合：
+
+**① 部署 xiaozhi-server**
+
+参考小智官方文档，用 docker-compose 部署：
+
+```yaml
+services:
+  xiaozhi-esp32-server:
+    image: ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:server_latest
+    container_name: xiaozhi-esp32-server
+    restart: always
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "8000:8000"   # WebSocket 服务
+      - "8003:8003"   # OTA / 视觉分析接口
+    volumes:
+      - ./data:/opt/xiaozhi-esp32-server/data
+      - ./models/SenseVoiceSmall/model.pt:/opt/xiaozhi-esp32-server/models/SenseVoiceSmall/model.pt
+```
+
+**② 放置豆包 TTS provider**
+
+`tts/doubao_v3.py` 是基于 xiaozhi-server TTS 机制编写的豆包 provider，需放入小智容器的 TTS provider 目录（`core/providers/tts/`），并在小智配置里将 TTS 指向豆包、填入 `voice` 与 `api_key`（具体配置项见小智官方文档）。
+
+**③ 对接 bridge**
+
+小智设备通过 SSE 连接 bridge，bridge 再把消息转发给 NekroAgent。确保 bridge 的 `ACCESS_KEY` 与 NekroAgent 后台一致、`CHANNEL_ID=private_stackchan`，小智侧的 SSE 地址指向 bridge。
+
+**④ 面板配置**
+
+环境变量 `DEVICE_BOT_INDEX` 指定设备栏显示在第几个 Bot 卡片。若不需要设备链路，设 `DEVICE_BOT_INDEX=-1` 隐藏设备栏。
 
 ---
 

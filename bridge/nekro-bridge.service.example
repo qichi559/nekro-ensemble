@@ -1,0 +1,40 @@
+# ============================================================
+# NekroAgent SSE Bridge systemd 服务模板
+# 每个 Bot 一个实例：复制为 nekro-bridge.service / nekro-bridge2.service / nekro-bridge3.service
+# 修改下方注释标注的变量后，放到 /etc/systemd/system/，然后执行：
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now nekro-bridge.service
+# 注意：监控面板通过 `systemctl is-active <服务名>` 检测 bridge 状态，
+#       服务名需与 bots.json 里的 bridge_service 字段一致。
+# ============================================================
+
+[Unit]
+Description=NekroAgent SSE Bridge Proxy
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/nekro-bridge
+# 对应 NekroAgent 端口：实例1=8021，实例2=8022，实例3=8023
+Environment=NEKRO_BASE_URL=http://127.0.0.1:8021
+# SSE 访问密钥，需与 NekroAgent 后台配置的 access key 一致
+Environment=ACCESS_KEY=你的SSE密钥
+# bridge 监听端口：实例1=8090，实例2=8091，实例3=8092
+Environment=LISTEN_PORT=8090
+# bridge 对外 API 的鉴权 key（面板/设备调用 TTS 接口时用）
+Environment=BRIDGE_API_KEY=你的bridge密钥
+Environment=RESPONSE_TIMEOUT=120
+# SSE 频道名，固定为 private_stackchan
+Environment=CHANNEL_ID=private_stackchan
+# 聊天历史文件，每个实例用不同的文件名
+Environment=CHAT_HISTORY_FILE=/opt/nekro-bridge/chat_history_1.jsonl
+# 豆包 TTS 音色 ID
+Environment=TTS_VOICE=你的音色ID
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/nekro-bridge/bridge.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

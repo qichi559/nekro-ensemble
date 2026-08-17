@@ -31,6 +31,10 @@ Environment=OWNER_NAME=
 Environment=CHAT_HISTORY_FILE=/opt/nekro-bridge/chat_history_1.jsonl
 # 豆包 TTS 音色 ID
 Environment=TTS_VOICE=你的音色ID
+# 豆包 TTS API 密钥
+Environment=TTS_API_KEY=你的TTS密钥
+# 豆包 TTS 资源 ID（音色克隆用 seed-icl-2.0，通用用 seed-tts-1.0）
+Environment=TTS_RESOURCE_ID=seed-tts-1.0
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /opt/nekro-bridge/bridge.py
 Restart=always

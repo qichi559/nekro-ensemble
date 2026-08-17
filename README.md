@@ -241,7 +241,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nekro-bridge.service
 ```
 
-关键环境变量（多实例的差异）：
+关键环境变量（多实例的差异，写在 `.service` 文件的 `Environment=` 行中）：
 
 | 变量 | 说明 | 实例1 / 实例2 / 实例3 |
 |---|---|---|
@@ -250,7 +250,10 @@ sudo systemctl enable --now nekro-bridge.service
 | `ACCESS_KEY` | SSE 访问密钥（与 NekroAgent 后台一致） | 各实例相同 |
 | `CHANNEL_ID` | SSE 频道名（固定） | `private_stackchan` |
 | `CHAT_HISTORY_FILE` | 聊天历史文件 | `chat_history_1` / `_2` / … |
+| `TTS_API_KEY` | 豆包 TTS 密钥 | 各实例可相同 |
+| `TTS_RESOURCE_ID` | 豆包 TTS 资源 ID | `seed-icl-2.0` 或 `seed-tts-1.0` |
 | `TTS_VOICE` | 豆包音色 ID | 每实例可不同 |
+| `OWNER_QQ` / `OWNER_NAME` | 设备消息发送者的 QQ/名字 | 各实例相同 |
 
 > ⚠️ 服务名务必与 `bots.json` 里的 `bridge_service` 字段一致（默认 `nekro-bridge` / `nekro-bridge2` / …），否则面板读不到 bridge 状态。
 
@@ -328,13 +331,8 @@ services:
 | `EXTRA_DOCKER_CONTAINERS` | 额外监控的 Docker 容器名（逗号分隔） | 空 |
 | `EXTRA_NAV_LINKS` | 面板顶部额外导航链接（JSON 数组） | 空 |
 | `XIAOZHI_CONFIG_PATH` | 小智配置文件路径（面板编辑用） | 空 |
-| `TTS_API_KEY` | 豆包 TTS 密钥（bridge 用） | 空 |
-| `TTS_VOICE` | 豆包 TTS 音色 ID | 空（需自己填） |
-| `TTS_RESOURCE_ID` | 豆包 TTS 资源 ID（音色克隆 `seed-icl` / 通用 `seed-tts`） | 空 |
-| `TTS_BRIDGE_URL` | adapter 调用的 TTS 接口地址 | `http://172.21.0.1:8090/api/tts` |
-| `OWNER_QQ` / `OWNER_NAME` | bridge 里设备消息发送者的 QQ/名字 | 空 |
-| `LISTEN_PORT` | bridge 监听端口（每个实例不同） | `8090` |
-| `BRIDGE_DATA_DIR` | bridge 数据目录（TTS 配置与缓存） | `/opt/nekro-bridge` |
+
+> bridge 的 TTS 密钥、音色等配置放在 systemd 服务文件中，见第 6 步。
 
 ### 模型组
 

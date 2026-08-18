@@ -1033,6 +1033,71 @@ def _nekro_config_request(bot_index, path, method="GET", body=None):
         return False, f"请求异常: {e}"
 
 
+def _sync_xiaozhi_model_group(group_name, chat_model, base_url, api_key):
+    """同步小智 .config.yaml：把 LLM 段下 ChatGLMLLM 和 DirectLLM 两个模块的
+    base_url/model_name/api_key 更新为目标模型组的值（保留缩进）。
+    失败不抛异常，只 log。返回 (ok, msg)。
+    """
+    if not XIAOZHI_CONFIG_PATH or not os.path.exists(XIAOZHI_CONFIG_PATH):
+        return True, "未配置小智 XIAOZHI_CONFIG_PATH，跳过同步"
+    try:
+        with open(XIAOZHI_CONFIG_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        log(f"[xiaozhi-sync] read config failed: {e}")
+        return False, f"读小智配置失败: {e}"
+
+    # 找到 LLM: 顶层段范围（到下一个顶层键为止）
+    llm_start = None
+    for i, line in enumerate(lines):
+        if line.rstrip() == "LLM:" or line.rstrip().startswith("LLM: "):
+            llm_start = i
+            break
+    if llm_start is None:
+        log("[xiaozhi-sync] LLM section not found")
+        return False, "小智配置中未找到 LLM 段"
+
+    changed = 0
+    current_mod = None  # 当前所在模块名（ChatGLMLLM / DirectLLM / 其它）
+    for i in range(llm_start + 1, len(lines)):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # 顶层键（无缩进）→ 段结束
+        if not line[0].isspace() and stripped:
+            break
+        # 模块名（4 空格缩进，如 "  ChatGLMLLM:"）
+        if line.startswith("    ") and not line.startswith("        ") and stripped.endswith(":"):
+            current_mod = stripped[:-1]
+            continue
+        # 字段（8 空格缩进）→ 只处理目标模块
+        if current_mod in ("ChatGLMLLM", "DirectLLM") and line.startswith("        "):
+            indent = line[:8]
+            if stripped.startswith("base_url:"):
+                lines[i] = f"{indent}base_url: {base_url}\n"
+                changed += 1
+            elif stripped.startswith("model_name:"):
+                lines[i] = f"{indent}model_name: {chat_model}\n"
+                changed += 1
+            elif stripped.startswith("api_key:") and api_key:
+                lines[i] = f"{indent}api_key: {api_key}\n"
+                changed += 1
+
+    if changed == 0:
+        log("[xiaozhi-sync] no fields matched, nothing to write")
+        return False, "小智配置未匹配到可同步字段（ChatGLMLLM/DirectLLM）"
+
+    try:
+        with open(XIAOZHI_CONFIG_PATH, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except Exception as e:
+        log(f"[xiaozhi-sync] write config failed: {e}")
+        return False, f"写小智配置失败: {e}"
+    log(f"[xiaozhi-sync] {group_name} -> ChatGLMLLM/DirectLLM ({chat_model} @ {base_url}) 已同步")
+    return True, f"小智配置已同步为 {group_name}"
+
+
 def apply_model_to_all(group_name, chat_model=None, base_url=None, api_key=None):
     """切换各 bot 的 USE_MODEL_GROUP（目标组缺失则自动创建），不重启"""
     import urllib.parse as _up
@@ -1073,6 +1138,15 @@ def apply_model_to_all(group_name, chat_model=None, base_url=None, api_key=None)
         ok, r = _nekro_config_request(bot_index, "/save/system", method="POST")
         if not ok or not (r or {}).get("ok"):
             return False, f"bot{bot_index + 1} 保存失败: {r}"
+    # 3. 同步小智语音（若有）：更新 ChatGLMLLM/DirectLLM 指向目标模型组 + 后台重启小智
+    if XIAOZHI_CONFIG_PATH and os.path.exists(XIAOZHI_CONFIG_PATH):
+        ok_sync, sync_msg = _sync_xiaozhi_model_group(group_name, group_config["CHAT_MODEL"], group_config["BASE_URL"], group_config["API_KEY"])
+        if ok_sync:
+            def _bg_restart_xz():
+                run_cmd("docker restart xiaozhi-esp32-server", timeout=30)
+                log(f"xiaozhi restarted after model group: {group_name}")
+            threading.Thread(target=_bg_restart_xz, daemon=True).start()
+            return True, f"已切换到 {group_name}（即时生效；{sync_msg}，小智重启中）"
     return True, f"已切换到 {group_name}（即时生效，无需重启）"
 
 

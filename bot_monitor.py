@@ -1080,7 +1080,7 @@ def delete_model_group_from_all(group_name):
     """删除所有 bot 的同名模型组（与『切换即全量同步创建』对称：加是全加，删也应全删）。
 
     NA 接口：DELETE /api/config/model-groups/{group_name}
-    对每个 bot 执行删除，跳过该 bot 上不存在的组（不报错），汇总结果。
+    对每个 bot 执行删除，跳过该 bot 上不存在的组（404，不算失败），汇总结果。
     """
     import urllib.parse as _up
     _gq = _up.quote(group_name, safe="")
@@ -1088,10 +1088,11 @@ def delete_model_group_from_all(group_name):
     skip_count = 0
     fail_list = []
     for bot_index in range(len(BOTS)):
-        ok, result = _nekro_config_request(bot_index, f"/model-groups/{_gq}", method="DELETE")
+        # 直接发 DELETE，把 404(不存在) 当 skip，其余失败计入
+        ok, result = _nekro_config_raw_request(bot_index, f"/model-groups/{_gq}", method="DELETE")
         if ok:
             ok_count += 1
-        elif isinstance(result, str) and "不存在" in result:
+        elif result == 404:
             skip_count += 1
         else:
             fail_list.append(f"bot{bot_index + 1}: {result}")
@@ -1101,6 +1102,42 @@ def delete_model_group_from_all(group_name):
     if fail_list:
         msg += f"；失败: {'; '.join(fail_list)}"
     return (len(fail_list) == 0), msg
+
+
+def _nekro_config_raw_request(bot_index, path, method="GET", body=None):
+    """类似 _nekro_config_request，但失败时返回 (ok, HTTP状态码或错误串)。
+    用于需要对 404 单独处理的场景（如删除不存在资源）。
+    """
+    token, err = get_nekro_jwt(bot_index)
+    if not token:
+        return False, f"登录失败: {err}"
+    m = re.search(r":(\d+)", BOTS[bot_index].get("nekro_url", ""))
+    if not m:
+        return False, "端口解析失败"
+    url = f"http://localhost:{m.group(1)}/api/config{path}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        resp = urllib.request.urlopen(req, timeout=10)
+        return True, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as he:
+        if he.code == 401:
+            nekro_jwt_cache.pop(bot_index, None)
+            token, err = get_nekro_jwt(bot_index)
+            if not token:
+                return False, f"重登失败: {err}"
+            try:
+                req = urllib.request.Request(url, data=data, headers={**headers, "Authorization": f"Bearer {token}"}, method=method)
+                resp = urllib.request.urlopen(req, timeout=10)
+                return True, json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as he2:
+                return False, he2.code
+            except Exception as e2:
+                return False, f"重试异常: {e2}"
+        return False, he.code
+    except Exception as e:
+        return False, f"请求异常: {e}"
 
 
 def _replace_llm_in_config(new_value):

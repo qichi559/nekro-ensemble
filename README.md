@@ -146,45 +146,34 @@
 
 ### 1. 部署 NekroAgent 多实例
 
-**方式 A：官方一键脚本（单实例起步）**
+**方式 A：官方一键脚本（推荐，含 NapCat）**
 
 ```bash
-sudo -E bash -c "$(curl -fsSL https://raw.githubusercontent.com/KroMiose/nekro-agent/main/quick_start_x_napcat.sh)"
+sudo -E bash -c "$(curl -fsSL https://raw.githubusercontent.com/KroMiose/nekro-agent/main/docker/install.sh)" - --with-napcat
 ```
+
+脚本会安装 Docker、生成 `.env`（自动填充随机 token/密码）、拉取官方 compose 并启动。**单实例默认即可用**；多实例时在数据目录的 `.env` 里改 `INSTANCE_NAME` 前缀和端口后重新运行（每个实例一个数据目录）。
+
+> ⚠️ 官方 compose **不含本项目的补丁挂载**，用方式 A 部署后仍需按下方 Step 3 手动追加补丁 volumes。
 
 **方式 B：用本仓库的编排模板**
 
-参考 `deploy/docker-compose.yml`。在仓库根目录执行：
+`deploy/docker-compose.yml` 与官方 compose 几乎一致，差异只有两点：**预置了补丁挂载**（Step 3 的两行 volumes 已写好）+ **固定 NapCat 老版本镜像 `v4.15.0`**（社区公认较稳，见 Step 2 提示）。适合想一步到位、不愿手动改官方 compose 的用户。
+
+复制模板后，按需设置实例前缀与端口即可：
 
 ```bash
-# 实例 1
+# 实例 1（数据目录和端口按需改）
 export NEKRO_DATA_DIR=$HOME/srv/nekro_agent
-export INSTANCE_NAME=""            # 单实例留空
-export NEKRO_EXPOSE_PORT=8021
-export NAPCAT_EXPOSE_PORT=6099
+export INSTANCE_NAME=""            # 实例 2 用 nekro2_，实例 3 用 nekro3_
+export NEKRO_EXPOSE_PORT=8021      # 实例 2 用 8022，依此类推
+export NAPCAT_EXPOSE_PORT=6099     # 实例 2 用 6100，依此类推
 export ONEBOT_ACCESS_TOKEN=你的QQ协议token   # 与 NA 后台 OneBot 配置一致
 export NEKRO_ADMIN_PASSWORD=你的管理员密码    # 首次部署设，之后可在后台改
-export POSTGRES_USER=nekro_agent
-export POSTGRES_PASSWORD=nekro_agent
-export POSTGRES_DATABASE=nekro_agent
-export QDRANT_API_KEY=                      # 向量数据库密钥（可选）
-sudo -E docker compose -f deploy/docker-compose.yml up -d
-
-# 实例 2（复制数据目录后，改前缀和端口）
-export NEKRO_DATA_DIR=$HOME/srv/nekro_agent2
-export INSTANCE_NAME="nekro2_"     # 容器名会变成 nekro2_nekro_agent 等
-export NEKRO_EXPOSE_PORT=8022
-export NAPCAT_EXPOSE_PORT=6100
-export ONEBOT_ACCESS_TOKEN=你的QQ协议token   # 多实例可共用相同 token
-export NEKRO_ADMIN_PASSWORD=你的管理员密码
-export POSTGRES_USER=nekro_agent
-export POSTGRES_PASSWORD=nekro_agent
-export POSTGRES_DATABASE=nekro_agent
-export QDRANT_API_KEY=
 sudo -E docker compose -f deploy/docker-compose.yml up -d
 ```
 
-> ⚠️ 容器名与端口务必和 `bots.json` 里填的一致。
+> 多实例 = 复制数据目录后，改 `INSTANCE_NAME` / `NEKRO_EXPOSE_PORT` / `NAPCAT_EXPOSE_PORT` 三个变量再执行一次。容器名与端口务必和 `bots.json` 里填的一致。
 
 > 💡 **`deploy/nekro-agent.yaml.example` 是可选参考**：NekroAgent 首次启动会在数据目录的 `configs/` 下自动生成 `nekro-agent.yaml` 默认配置，**无需手动复制**。只有当你需要预置系统级参数（如记忆开关、日志级别）时才参考此文件手动调整。
 

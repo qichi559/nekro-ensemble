@@ -1034,8 +1034,11 @@ def _nekro_config_request(bot_index, path, method="GET", body=None):
 
 
 def _sync_xiaozhi_model_group(group_name, chat_model, base_url, api_key):
-    """同步小智 .config.yaml：把 LLM 段下 ChatGLMLLM 和 DirectLLM 两个模块的
+    """同步小智 .config.yaml：把 LLM 段下 DirectLLM 模块的
     base_url/model_name/api_key 更新为目标模型组的值（自适应缩进，不写死空格数）。
+
+    注意：只同步 DirectLLM（直连模式）。ChatGLMLLM 走 bridge→NekroAgent，
+    由面板切换 USE_MODEL_GROUP 自动跟随，不可改为直连目标，避免破坏桥接链路。
     失败不抛异常，只 log。返回 (ok, msg)。
     """
     if not XIAOZHI_CONFIG_PATH or not os.path.exists(XIAOZHI_CONFIG_PATH):
@@ -1105,7 +1108,7 @@ def _sync_xiaozhi_model_group(group_name, chat_model, base_url, api_key):
         if indent == mod_indent and stripped.endswith(":"):
             current_mod = stripped[:-1]
             continue
-        if current_mod in ("ChatGLMLLM", "DirectLLM") and indent == field_indent:
+        if current_mod == "DirectLLM" and indent == field_indent:
             indent_str = line[:indent]
             if stripped.startswith("base_url:"):
                 lines[i] = f"{indent_str}base_url: {base_url}\n"
@@ -1119,7 +1122,7 @@ def _sync_xiaozhi_model_group(group_name, chat_model, base_url, api_key):
 
     if changed == 0:
         log("[xiaozhi-sync] no fields matched, nothing to write")
-        return False, "小智配置未匹配到可同步字段（ChatGLMLLM/DirectLLM）"
+        return False, "小智配置未匹配到可同步字段（DirectLLM）"
 
     try:
         with open(XIAOZHI_CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -1127,7 +1130,7 @@ def _sync_xiaozhi_model_group(group_name, chat_model, base_url, api_key):
     except Exception as e:
         log(f"[xiaozhi-sync] write config failed: {e}")
         return False, f"写小智配置失败: {e}"
-    log(f"[xiaozhi-sync] {group_name} -> ChatGLMLLM/DirectLLM ({chat_model} @ {base_url}) 已同步")
+    log(f"[xiaozhi-sync] {group_name} -> DirectLLM ({chat_model} @ {base_url}) 已同步")
     return True, f"小智配置已同步为 {group_name}"
 
 
@@ -1171,7 +1174,7 @@ def apply_model_to_all(group_name, chat_model=None, base_url=None, api_key=None)
         ok, r = _nekro_config_request(bot_index, "/save/system", method="POST")
         if not ok or not (r or {}).get("ok"):
             return False, f"bot{bot_index + 1} 保存失败: {r}"
-    # 3. 同步小智语音（若有）：更新 ChatGLMLLM/DirectLLM 指向目标模型组 + 后台重启小智
+    # 3. 同步小智语音（若有）：更新 DirectLLM 指向目标模型组 + 后台重启小智
     if XIAOZHI_CONFIG_PATH and os.path.exists(XIAOZHI_CONFIG_PATH):
         ok_sync, sync_msg = _sync_xiaozhi_model_group(group_name, group_config["CHAT_MODEL"], group_config["BASE_URL"], group_config["API_KEY"])
         if ok_sync:

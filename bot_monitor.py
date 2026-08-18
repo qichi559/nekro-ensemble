@@ -2142,7 +2142,7 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
 <div class="modal-body" style="padding:16px 18px">
 <div class="addg-field"><div class="addg-label">组名称 <span style="color:#f0a6c9">（必填）</span></div><input class="addg-input" id="addg-name" placeholder="如：deepseek 主用"></div>
 <div class="addg-field"><div class="addg-label">接口地址 BASE_URL <span style="color:#f0a6c9">（必填）</span></div><input class="addg-input" id="addg-url" placeholder="https://api.deepseek.com/v1"></div>
-<div class="addg-field"><div class="addg-label">API_KEY <span style="color:#f0a6c9">（可留空，拉取模型列表需要）</span></div><input class="addg-input" id="addg-key" placeholder="sk-..." type="password"></div>
+<div class="addg-field"><div class="addg-label">API_KEY</div><input class="addg-input" id="addg-key" placeholder="sk-..." type="password"></div>
 <div class="addg-field" id="addg-model-field" style="display:none"><div class="addg-label">选择模型 <span style="color:#f0a6c9">（已从接口拉取到 <span id="addg-model-count">0</span> 个）</span></div><select class="model-select" id="addg-model"></select></div>
 <div id="addg-status" style="margin-top:12px;font-size:0.75rem;color:#be185d;min-height:18px"></div>
 <div class="addg-btns">

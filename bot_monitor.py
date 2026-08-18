@@ -2090,6 +2090,15 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
 .model-meta{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .model-meta-chip{background:rgba(236,72,153,.07);border:1px dashed rgba(236,72,153,.25);color:#be185d;font-size:.68rem;padding:2px 10px;border-radius:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .model-meta-chip b{font-weight:700}
+/* ===== 添加模型组模态框 ===== */
+.addg-field{margin-bottom:12px}
+.addg-label{font-size:.75rem;color:#be185d;font-weight:600;margin-bottom:5px;letter-spacing:.3px}
+.addg-input{width:100%;background:#ffffff;border:1px solid rgba(236,72,153,.3);border-radius:8px;padding:10px 12px;color:#9d174d;font-size:.85rem;outline:none;box-sizing:border-box;transition:border-color .2s,box-shadow .2s}
+.addg-input:focus{border-color:#ec4899;box-shadow:0 0 0 3px rgba(236,72,153,.12)}
+.addg-input::placeholder{color:#f0a6c9}
+.addg-btns{display:flex;gap:8px;margin-top:14px}
+.addg-btns .model-btn{flex:1}
+/* ===== 添加模型组模态框 end ===== */
 /* ===== 模型卡片美化 end ===== */
 </style>
 </head>
@@ -2121,6 +2130,26 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
 <div class="modal-footer">
 <button class="sub-btn sub-btn-log" onclick="refreshLogs()">刷新日志</button>
 <button class="sub-btn sub-btn-restart" onclick="scrollLogTop()">回到顶部</button>
+</div>
+</div>
+</div>
+<div class="modal-overlay" id="add-group-modal" onclick="if(event.target===this)closeAddGroupModal()">
+<div class="modal-box" style="max-height:90vh;border-radius:16px">
+<div class="modal-header">
+<span class="modal-title">添加模型组</span>
+<button class="modal-close" onclick="closeAddGroupModal()">关闭</button>
+</div>
+<div class="modal-body" style="padding:16px 18px">
+<div class="addg-field"><div class="addg-label">组名称 <span style="color:#f0a6c9">（必填）</span></div><input class="addg-input" id="addg-name" placeholder="如：deepseek 主用"></div>
+<div class="addg-field"><div class="addg-label">接口地址 BASE_URL <span style="color:#f0a6c9">（必填）</span></div><input class="addg-input" id="addg-url" placeholder="https://api.deepseek.com/v1"></div>
+<div class="addg-field"><div class="addg-label">API_KEY <span style="color:#f0a6c9">（可留空，拉取模型列表需要）</span></div><input class="addg-input" id="addg-key" placeholder="sk-..." type="password"></div>
+<div class="addg-field" id="addg-model-field" style="display:none"><div class="addg-label">选择模型 <span style="color:#f0a6c9">（已从接口拉取到 <span id="addg-model-count">0</span> 个）</span></div><select class="model-select" id="addg-model"></select></div>
+<div id="addg-status" style="margin-top:12px;font-size:0.75rem;color:#be185d;min-height:18px"></div>
+<div class="addg-btns">
+<button class="model-btn model-btn-add" id="addg-fetch-btn" onclick="addGroupFetchModels()">🔍 拉取模型列表</button>
+<button class="model-btn model-btn-ok" id="addg-confirm-btn" onclick="confirmAddModel()" style="display:none">✓ 确认添加</button>
+<button class="model-btn model-btn-plain" onclick="closeAddGroupModal()">取消</button>
+</div>
 </div>
 </div>
 </div>
@@ -2171,9 +2200,13 @@ var modelGroups=[];var currentModel="";var selectedModel="";
 function selectModel(name){if(!name)return;selectedModel=name;var sel=document.getElementById("model-select");var opt=sel?sel.querySelector('option[value="'+esc(name)+'"]'):null;if(opt){opt.setAttribute("selected","");var prevOpts=sel.querySelectorAll("option");for(var i=0;i<prevOpts.length;i++){if(prevOpts[i].value!==name)prevOpts[i].removeAttribute("selected")}}var btn=document.getElementById("model-apply-btn");if(btn)btn.disabled=false}
 function applySelectedModel(){var name=selectedModel||(document.getElementById("model-select")?document.getElementById("model-select").value:"");if(!name)return;switchModel(name)}
 function switchModel(name){if(!name)return;var p=null;(modelGroups||[]).forEach(function(g){if(g.group_name===name)p=g});if(!p){showToast("未找到模型组: "+name,"error");return}currentModel=p.group_name;selectedModel=name;_renderModelCard();showToast("正在切换至 "+p.pretty+" ...","");fetch("/api/apply-model",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_name:p.group_name,chat_model:p.chat_model,base_url:p.base_url,api_key:p.api_key})}).then(function(r){return r.json()}).then(function(d){showToast(d.msg,d.ok?"success":"error");if(d.ok)loadModelGroups()}).catch(function(e){showToast("请求失败:"+e.message,"error");loadModelGroups()})}
-var _addCtx={};function showAddModelGroup(){var n=prompt("新模型组名称：");if(!n||!n.trim())return;_addCtx.name=n.trim();var b=prompt("BASE_URL 接口地址（如 https://api.deepseek.com/v1）：");if(!b||!b.trim())return;_addCtx.base_url=b.trim();var k=prompt("API_KEY（可留空，拉取模型列表需要）：","");_addCtx.api_key=(k||"").trim();showToast("正在拉取模型列表...","");fetch("/api/fetch-models",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_url:_addCtx.base_url,api_key:_addCtx.api_key})}).then(function(r){return r.json()}).then(function(d){if(!d.ok){showToast("拉取失败: "+(d.msg||""),"error");return}var models=d.models||[];if(models.length===0){showToast("接口返回模型列表为空","error");return}var el=document.getElementById("model-section");if(!el)return;var opts=models.map(function(m){return '<option value="'+esc(m)+'">'+esc(m)+'</option>'}).join("");el.innerHTML='<div class="model-card"><div class="model-head"><span class="label">选择模型</span><span class="model-badge">'+esc(_addCtx.name)+'</span></div><div class="model-row"><div class="model-row-label">从上面接口拉取到 '+models.length+' 个模型，选择要使用的：</div><select id="model-picker" class="model-select">'+opts+'</select></div><div class="model-meta"><div class="model-meta-chip" title="'+esc(_addCtx.base_url)+'">接口 '+esc(_addCtx.base_url.replace(/^https?:\/\//,"").replace(/\/+$/,""))+'</div>'+( _addCtx.api_key?'<div class="model-meta-chip">Key 已填</div>':'<div class="model-meta-chip">Key 未填</div>')+'</div><div class="model-btns" style="margin-top:10px"><button class="model-btn model-btn-ok" onclick="confirmAddModel()">✓ 确认添加</button><button class="model-btn model-btn-plain" onclick="cancelAddModel()">✕ 取消</button></div></div>';}).catch(function(e){showToast("请求失败:"+e.message,"error")})}
-function confirmAddModel(){var picker=document.getElementById("model-picker");if(!picker)return;var m=picker.value;if(!m)return;showToast("正在创建 "+_addCtx.name+"...","");fetch("/api/create-model-group",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_name:_addCtx.name,chat_model:m,base_url:_addCtx.base_url,api_key:_addCtx.api_key})}).then(function(r){return r.json()}).then(function(d){showToast(d.msg,d.ok?"success":"error");loadModelGroups()}).catch(function(e){showToast("请求失败:"+e.message,"error")})}
-function cancelAddModel(){loadModelGroups()}
+var _addCtx={};
+function openAddGroupModal(){document.getElementById("add-group-modal").classList.add("active");document.getElementById("addg-name").value="";document.getElementById("addg-url").value="";document.getElementById("addg-key").value="";document.getElementById("addg-model-field").style.display="none";document.getElementById("addg-model").innerHTML="";document.getElementById("addg-confirm-btn").style.display="none";document.getElementById("addg-fetch-btn").style.display="";document.getElementById("addg-status").textContent="";setTimeout(function(){document.getElementById("addg-name").focus()},100)}
+function closeAddGroupModal(){document.getElementById("add-group-modal").classList.remove("active")}
+function addGroupFetchModels(){var n=document.getElementById("addg-name").value.trim();var b=document.getElementById("addg-url").value.trim();var k=document.getElementById("addg-key").value.trim();if(!n){document.getElementById("addg-status").textContent="请先填写组名称";return}if(!b){document.getElementById("addg-status").textContent="请先填写接口地址 BASE_URL";return}_addCtx.name=n;_addCtx.base_url=b;_addCtx.api_key=k;var st=document.getElementById("addg-status");st.textContent="正在拉取模型列表...";fetch("/api/fetch-models",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_url:_addCtx.base_url,api_key:_addCtx.api_key})}).then(function(r){return r.json()}).then(function(d){if(!d.ok){st.textContent="拉取失败: "+(d.msg||"");return}var models=d.models||[];if(models.length===0){st.textContent="接口返回模型列表为空";return}var sel=document.getElementById("addg-model");sel.innerHTML=models.map(function(m){return '<option value="'+esc(m)+'">'+esc(m)+'</option>'}).join("");document.getElementById("addg-model-count").textContent=models.length;document.getElementById("addg-model-field").style.display="";document.getElementById("addg-confirm-btn").style.display="";document.getElementById("addg-fetch-btn").style.display="none";st.textContent="拉取到 "+models.length+" 个模型，选择要使用的模型后添加"})}
+function showAddModelGroup(){openAddGroupModal()}
+function confirmAddModel(){var picker=document.getElementById("addg-model");if(!picker)return;var m=picker.value;if(!m)return;showToast("正在创建 "+_addCtx.name+"...","");fetch("/api/create-model-group",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_name:_addCtx.name,chat_model:m,base_url:_addCtx.base_url,api_key:_addCtx.api_key})}).then(function(r){return r.json()}).then(function(d){showToast(d.msg,d.ok?"success":"error");if(d.ok)closeAddGroupModal();loadModelGroups()}).catch(function(e){showToast("请求失败:"+e.message,"error")})}
+function cancelAddModel(){closeAddGroupModal()}
 function deleteCurrentModelGroup(){var name=currentModel;if(!name||name==="unknown"){showToast("当前没有可删除的模型组","error");return}if(!confirm("确认删除模型组「"+name+"」？"))return;showToast("正在删除 "+name+" ...","");fetch("/api/delete-model-group",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_name:name})}).then(function(r){return r.json()}).then(function(d){showToast(d.msg,d.ok?"success":"error");if(d.ok){currentModel="unknown";loadModelGroups()}}).catch(function(e){showToast("请求失败:"+e.message,"error")})}
 
 var BOTS_DATA = __BOTS_DATA__;

@@ -1035,7 +1035,7 @@ def _nekro_config_request(bot_index, path, method="GET", body=None):
 
 def _sync_xiaozhi_model_group(group_name, chat_model, base_url, api_key):
     """同步小智 .config.yaml：把 LLM 段下 ChatGLMLLM 和 DirectLLM 两个模块的
-    base_url/model_name/api_key 更新为目标模型组的值（保留缩进）。
+    base_url/model_name/api_key 更新为目标模型组的值（自适应缩进，不写死空格数）。
     失败不抛异常，只 log。返回 (ok, msg)。
     """
     if not XIAOZHI_CONFIG_PATH or not os.path.exists(XIAOZHI_CONFIG_PATH):
@@ -1057,31 +1057,64 @@ def _sync_xiaozhi_model_group(group_name, chat_model, base_url, api_key):
         log("[xiaozhi-sync] LLM section not found")
         return False, "小智配置中未找到 LLM 段"
 
-    changed = 0
-    current_mod = None  # 当前所在模块名（ChatGLMLLM / DirectLLM / 其它）
+    # 解析段内模块/字段缩进宽度（自适应）
+    mod_indent = None  # 模块名缩进（如 '  ChatGLMLLM:' 的 2 空格）
+    field_indent = None  # 字段缩进（如 '    type:' 的 4 空格）
+    mods = []  # [(模块缩进行, 模块名), ...]
     for i in range(llm_start + 1, len(lines)):
         line = lines[i]
         stripped = line.strip()
         if not stripped:
             continue
-        # 顶层键（无缩进）→ 段结束
+        if not line[0].isspace() and stripped:
+            break  # 顶层键 → 段结束
+        indent = len(line) - len(line.lstrip())
+        if line[indent:].rstrip().endswith(":"):
+            # 模块名行（冒号结尾、无空格分隔）
+            if mod_indent is None:
+                mod_indent = indent
+            if field_indent is None and mod_indent is not None and indent > mod_indent:
+                field_indent = indent
+            if indent <= (field_indent or 10**9):
+                # 记录顶层模块（缩进 == mod_indent）
+                mods.append((indent, stripped[:-1]))
+                continue
+            # 更深层（可能是子配置），忽略
+            continue
+        # 普通字段行：若还没确定 field_indent，取第一个字段的缩进
+        if field_indent is None and mod_indent is not None and indent > mod_indent:
+            field_indent = indent
+    if mod_indent is None:
+        log("[xiaozhi-sync] no modules under LLM section")
+        return False, "LLM 段下未找到任何模块"
+
+    # 用 field_indent 作为字段缩进；若多个模块层级一致，直接取 mod_indent+2 兜底
+    if field_indent is None:
+        field_indent = mod_indent + 2
+
+    changed = 0
+    current_mod = None
+    for i in range(llm_start + 1, len(lines)):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped:
+            continue
         if not line[0].isspace() and stripped:
             break
-        # 模块名（4 空格缩进，如 "  ChatGLMLLM:"）
-        if line.startswith("    ") and not line.startswith("        ") and stripped.endswith(":"):
+        indent = len(line) - len(line.lstrip())
+        if indent == mod_indent and stripped.endswith(":"):
             current_mod = stripped[:-1]
             continue
-        # 字段（8 空格缩进）→ 只处理目标模块
-        if current_mod in ("ChatGLMLLM", "DirectLLM") and line.startswith("        "):
-            indent = line[:8]
+        if current_mod in ("ChatGLMLLM", "DirectLLM") and indent == field_indent:
+            indent_str = line[:indent]
             if stripped.startswith("base_url:"):
-                lines[i] = f"{indent}base_url: {base_url}\n"
+                lines[i] = f"{indent_str}base_url: {base_url}\n"
                 changed += 1
             elif stripped.startswith("model_name:"):
-                lines[i] = f"{indent}model_name: {chat_model}\n"
+                lines[i] = f"{indent_str}model_name: {chat_model}\n"
                 changed += 1
             elif stripped.startswith("api_key:") and api_key:
-                lines[i] = f"{indent}api_key: {api_key}\n"
+                lines[i] = f"{indent_str}api_key: {api_key}\n"
                 changed += 1
 
     if changed == 0:

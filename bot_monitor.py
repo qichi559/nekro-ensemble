@@ -520,8 +520,10 @@ def collect_bot_data(bot, bot_index, statuses, stats):
     online, online_msg = get_napcat_online(bot_index, bot)
     nekro_conn = get_nekro_connection(nekro_name)
     napcat_webui_url = bot["napcat_url"] + "/webui?token=" + bot.get("napcat_token", "")
+    preset_name = get_bot_preset_name(bot_index + 1)
     return {
         "name": bot["name"], "role": bot["role"], "qq": bot["qq"],
+        "preset_name": preset_name,
         "napcat_url": napcat_webui_url,
         "napcat_container": napcat_name, "nekro_container": nekro_name,
         "napcat_running": napcat_running, "nekro_running": nekro_running,
@@ -554,7 +556,12 @@ def collect_data():
             except Exception as e:
                 bot = future_bots[future]
                 errors.append(f"{bot['name']} error: {e}")
-                bots_data.append({"name": bot["name"], "role": bot["role"], "qq": bot["qq"], "napcat_url": bot["napcat_url"], "napcat_container": bot["napcat_container"], "nekro_container": bot["nekro_container"], "napcat_running": False, "nekro_running": False, "napcat_stats": {"cpu": "N/A", "mem": "N/A", "mem_pct": "N/A"}, "nekro_stats": {"cpu": "N/A", "mem": "N/A", "mem_pct": "N/A"}, "online": None, "online_msg": "采集失败", "nekro_conn": "采集失败"})
+                _bi = 1
+                try:
+                    _bi = BOTS.index(bot) + 1
+                except Exception:
+                    pass
+                bots_data.append({"name": bot["name"], "role": bot["role"], "qq": bot["qq"], "preset_name": get_bot_preset_name(_bi), "napcat_url": bot["napcat_url"], "napcat_container": bot["napcat_container"], "nekro_container": bot["nekro_container"], "napcat_running": False, "nekro_running": False, "napcat_stats": {"cpu": "N/A", "mem": "N/A", "mem_pct": "N/A"}, "nekro_stats": {"cpu": "N/A", "mem": "N/A", "mem_pct": "N/A"}, "online": None, "online_msg": "采集失败", "nekro_conn": "采集失败"})
     # 按 BOTS 配置顺序排序，确保索引与 BOTS 一致
     order = {b["name"]: i for i, b in enumerate(BOTS)}
     bots_data.sort(key=lambda x: order.get(x["name"], 99))
@@ -738,6 +745,52 @@ def get_pg_container(bot_index):
     except Exception:
         pass
     return ""
+
+
+def get_bot_preset_name(bot_index):
+    """读取某 bot 的 Nekro 默认人设名字（AI_CHAT_DEFAULT_PRESET_ID 指向的 presets 表 name）。
+
+    bot_index 1-based。读取 yaml 的 AI_CHAT_DEFAULT_PRESET_ID（缺省 1），
+    再 docker exec psql 查 presets 表对应 id 的 name。
+    带进程内缓存（预设不常变，缓存 60s），查询失败返回空串。
+    """
+    try:
+        idx = int(bot_index)
+        if not (1 <= idx <= len(BOTS)):
+            return ""
+        key = idx
+        now = time.time()
+        cached = _preset_name_cache.get(key)
+        if cached and now - cached["time"] < 60:
+            return cached["name"]
+        # 1) 读 yaml 拿 AI_CHAT_DEFAULT_PRESET_ID（缺省 1）
+        dd = get_bot_data_dir(idx)
+        preset_id = "1"
+        if dd:
+            p = os.path.join(dd, "configs", "nekro-agent.yaml")
+            txt = run_cmd(f"cat {p}", timeout=5) or ""
+            m = re.search(r"^AI_CHAT_DEFAULT_PRESET_ID:\s*(.+)", txt, re.MULTILINE)
+            if m:
+                val = m.group(1).strip().split("#")[0].strip()
+                if val:
+                    preset_id = val
+        # 2) 查数据库 presets 表
+        pg = get_pg_container(idx)
+        if not pg:
+            _preset_name_cache[key] = {"name": "", "time": now}
+            return ""
+        sql = "SELECT name FROM presets WHERE id = %s" % preset_id
+        cmd = 'docker exec %s psql -U nekro_agent -d nekro_agent -t -A -c "%s"' % (pg, sql.replace('"', '\\"'))
+        out = run_cmd(cmd, timeout=10)
+        name = out.strip()
+        _preset_name_cache[key] = {"name": name, "time": now}
+        return name
+    except Exception as e:
+        log(f"preset name check error (bot {bot_index}): {e}")
+        return ""
+
+
+_preset_name_cache = {}
 
 
 def check_note_sync_one(pg):
@@ -1737,7 +1790,7 @@ var BOT_COUNT=BOTS_DATA.length;
 var currentBot=parseInt((location.search.match(/[?&]bot=(\d+)/)||[])[1])||BOT_COUNT;
 if(currentBot<1||currentBot>BOT_COUNT)currentBot=BOT_COUNT;
 function botQ(i){var b=BOTS_DATA[i-1];return b?b.qq:""}
-function botName(i){var b=BOTS_DATA[i-1];return b?b.role:("Bot "+i)}
+function botName(i){var b=BOTS_DATA[i-1];return b?(b.preset_name||b.role):("Bot "+i)}
 function esc(s){var d=document.createElement("div");d.textContent=s||"";return d.innerHTML}
 function autoResize(el){el.style.height="auto";el.style.height=Math.min(el.scrollHeight,120)+"px"}
 function handleKey(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg();}}
@@ -2287,7 +2340,7 @@ function initSections(){var sections=["sec-sys","sec-model","sec-bots","sec-nav"
 function setSummary(id,text){var el=document.getElementById(id);if(el)el.textContent=text}
 function setSectionHealth(id,healthy){var el=document.getElementById(id);if(!el)return;el.classList.remove("healthy","warning");el.classList.add(healthy?"healthy":"warning")}
 function renderSystem(sys){var memPct=parseFloat(sys.mem_pct);var memClass=isNaN(memPct)?"":(memPct<50?"":memPct<80?"warn":"danger");document.getElementById("sys-bar").innerHTML='<div class="sys-item"><div class="sys-label">服务器时间</div><div class="sys-value">'+esc(sys.time)+'</div></div><div class="sys-item"><div class="sys-label">CPU</div><div class="sys-value">'+esc(sys.cpu)+'</div></div><div class="sys-item"><div class="sys-label">内存</div><div class="sys-value '+memClass+'">'+esc(sys.mem)+' ('+esc(sys.mem_pct)+')</div></div><div class="sys-item"><div class="sys-label">磁盘</div><div class="sys-value">'+esc(sys.disk)+'</div></div>'}
-function renderBot(bot,index){var statusClass=bot.online===true?"online":bot.online===false?"offline":"unknown";var statusBadge=bot.online===true?"status-online":bot.online===false?"status-offline":"status-unknown";var napcatMemPct=(bot.napcat_stats.mem_pct||"").replace("%","").trim();var nekroMemPct=(bot.nekro_stats.mem_pct||"").replace("%","").trim();var connClass=bot.nekro_conn==="已连接"?"green":bot.nekro_conn==="已断开"?"red":"yellow";var napcatC=esc(bot.napcat_container);var nekroC=esc(bot.nekro_container);var html="";var avatarUrl=avUrl(esc(bot.qq),640);html+='<div class="bot-card '+statusClass+'">';html+='<div class="card-header"><div class="card-header-left"><img class="bot-avatar" src="'+avatarUrl+'" onerror="this.style.display=\'none\'"><div><span class="bot-name">'+esc(bot.role)+'</span><span class="status-badge '+statusBadge+'">'+esc(bot.online_msg)+'</span></div></div><div class="card-header-right"><a href="/chat?bot='+(index+1)+'" target="_blank" class="main-btn main-btn-chat">💬 聊天</a></div></div>';html+='<div class="bot-sub open" id="bs-mon-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-mon-'+index+'\')"><span>监控</span><span class="bot-sub-arrow">▾</span></div><div class="bot-sub-b">';html+='<div class="info-section"><div class="section-title">NapCat</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.napcat_running?"green":"red")+'">'+(bot.napcat_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.napcat_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(napcatMemPct)+'">'+esc(bot.napcat_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(napcatMemPct)+'" style="width:'+(napcatMemPct||0)+'%"></div></div></div>';html+='<div class="info-section"><div class="section-title">NekroAgent</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.nekro_running?"green":"red")+'">'+(bot.nekro_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">OneBot</span><span class="value '+connClass+'">'+esc(bot.nekro_conn)+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.nekro_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(nekroMemPct)+'">'+esc(bot.nekro_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(nekroMemPct)+'" style="width:'+(nekroMemPct||0)+'%"></div></div></div>';var kickOn=bot.kick_restart!==false;html+='<div class="guard-toggle"><span class="guard-label">踢下线自动重启NapCat</span><div class="guard-switch'+(kickOn?" on":"")+'" onclick="toggleKickRestart('+index+',this)"></div></div>';var voiceOn=voiceSwitchStates[index]!==false;html+='<div class="guard-toggle"><span class="guard-label">QQ 语音回复</span><div class="guard-switch'+(voiceOn?" on":"")+'" id="voice-switch-'+index+'" onclick="toggleVoiceSwitch('+index+',this)"></div></div>';html+='<div style="margin-top:6px"><a href="'+esc(bot.napcat_url)+'" target="_blank" class="main-btn main-btn-napcat">NapCat</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+napcatC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+napcatC+'\',\'restart\')">重启</button>';if(bot.napcat_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+napcatC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+napcatC+'\',\'start\')">启动</button>';html+='</div></div>';html+='<div style="margin-top:6px"><a href="javascript:void(0)" onclick="openNekro('+index+')" class="main-btn main-btn-nekro">NekroAgent</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+nekroC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+nekroC+'\',\'restart\')">重启</button>';if(bot.nekro_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+nekroC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+nekroC+'\',\'start\')">启动</button>';html+='</div></div>';html+='</div></div>';html+='<div class="bot-sub" id="bs-br-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-br-'+index+'\')"><span>桥接</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-br-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-tts-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-tts-'+index+'\')"><span>音色</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-tts-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-note-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-note-'+index+'\')"><span>笔记</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-note-b-'+index+'"></div></div>';if(index===DEVICE_BOT_INDEX){html+='<div class="bot-sub" id="bs-dev-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-dev-'+index+'\')"><span>设备</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-dev-b-'+index+'"></div></div>'}html+='</div>';return html}
+function renderBot(bot,index){var statusClass=bot.online===true?"online":bot.online===false?"offline":"unknown";var statusBadge=bot.online===true?"status-online":bot.online===false?"status-offline":"status-unknown";var napcatMemPct=(bot.napcat_stats.mem_pct||"").replace("%","").trim();var nekroMemPct=(bot.nekro_stats.mem_pct||"").replace("%","").trim();var connClass=bot.nekro_conn==="已连接"?"green":bot.nekro_conn==="已断开"?"red":"yellow";var napcatC=esc(bot.napcat_container);var nekroC=esc(bot.nekro_container);var html="";var avatarUrl=avUrl(esc(bot.qq),640);html+='<div class="bot-card '+statusClass+'">';html+='<div class="card-header"><div class="card-header-left"><img class="bot-avatar" src="'+avatarUrl+'" onerror="this.style.display=\'none\'"><div><span class="bot-name">'+esc(bot.preset_name||bot.role)+'</span><span class="status-badge '+statusBadge+'">'+esc(bot.online_msg)+'</span></div></div><div class="card-header-right"><a href="/chat?bot='+(index+1)+'" target="_blank" class="main-btn main-btn-chat">💬 聊天</a></div></div>';html+='<div class="bot-sub open" id="bs-mon-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-mon-'+index+'\')"><span>监控</span><span class="bot-sub-arrow">▾</span></div><div class="bot-sub-b">';html+='<div class="info-section"><div class="section-title">NapCat</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.napcat_running?"green":"red")+'">'+(bot.napcat_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.napcat_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(napcatMemPct)+'">'+esc(bot.napcat_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(napcatMemPct)+'" style="width:'+(napcatMemPct||0)+'%"></div></div></div>';html+='<div class="info-section"><div class="section-title">NekroAgent</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.nekro_running?"green":"red")+'">'+(bot.nekro_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">OneBot</span><span class="value '+connClass+'">'+esc(bot.nekro_conn)+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.nekro_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(nekroMemPct)+'">'+esc(bot.nekro_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(nekroMemPct)+'" style="width:'+(nekroMemPct||0)+'%"></div></div></div>';var kickOn=bot.kick_restart!==false;html+='<div class="guard-toggle"><span class="guard-label">踢下线自动重启NapCat</span><div class="guard-switch'+(kickOn?" on":"")+'" onclick="toggleKickRestart('+index+',this)"></div></div>';var voiceOn=voiceSwitchStates[index]!==false;html+='<div class="guard-toggle"><span class="guard-label">QQ 语音回复</span><div class="guard-switch'+(voiceOn?" on":"")+'" id="voice-switch-'+index+'" onclick="toggleVoiceSwitch('+index+',this)"></div></div>';html+='<div style="margin-top:6px"><a href="'+esc(bot.napcat_url)+'" target="_blank" class="main-btn main-btn-napcat">NapCat</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+napcatC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+napcatC+'\',\'restart\')">重启</button>';if(bot.napcat_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+napcatC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+napcatC+'\',\'start\')">启动</button>';html+='</div></div>';html+='<div style="margin-top:6px"><a href="javascript:void(0)" onclick="openNekro('+index+')" class="main-btn main-btn-nekro">NekroAgent</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+nekroC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+nekroC+'\',\'restart\')">重启</button>';if(bot.nekro_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+nekroC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+nekroC+'\',\'start\')">启动</button>';html+='</div></div>';html+='</div></div>';html+='<div class="bot-sub" id="bs-br-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-br-'+index+'\')"><span>桥接</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-br-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-tts-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-tts-'+index+'\')"><span>音色</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-tts-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-note-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-note-'+index+'\')"><span>笔记</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-note-b-'+index+'"></div></div>';if(index===DEVICE_BOT_INDEX){html+='<div class="bot-sub" id="bs-dev-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-dev-'+index+'\')"><span>设备</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-dev-b-'+index+'"></div></div>'}html+='</div>';return html}
 
 function loadModelGroups(){fetch("/api/model-presets").then(function(r){return r.json()}).then(function(d){modelGroups=d.groups||[];currentModel=d.current||"unknown";selectedModel=currentModel;_renderModelCard()}).catch(function(){})}function _renderModelCard(){var el=document.getElementById("model-section");if(!el)return;var cur=null;(modelGroups||[]).forEach(function(g){if(g.group_name===currentModel)cur=g});var curPretty=cur?cur.pretty:currentModel;setSummary("summary-model",curPretty);if(!modelGroups.length){el.innerHTML='<div class="model-card"><div class="model-head"><span class="label">当前模型组</span><span class="model-badge">未配置</span></div><div class="model-row"><div class="model-row-label">暂无可用模型组，请先添加</div></div><div class="model-btns"><button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加模型组</button></div></div>';return}var opts=(modelGroups||[]).map(function(g){var sel=(g.group_name===(selectedModel||currentModel))?" selected":"";return '<option value="'+esc(g.group_name)+'"'+sel+'>'+esc(g.pretty||g.group_name)+'</option>'}).join("");var pending=selectedModel&&selectedModel!==currentModel;var _pm=null;(modelGroups||[]).forEach(function(g){if(g.group_name===selectedModel)_pm=g});var applyBtnLabel=pending?("⚡ 应用："+esc(currentModel)+" → "+esc(selectedModel)):"⚡ 应用所选";var curChip=cur?('<div class="model-meta-chip">模型 <b>'+esc(cur.chat_model||"-")+'</b></div><div class="model-meta-chip" title="'+esc(cur.base_url||"")+'">接口 '+(cur.base_url?esc(cur.base_url.replace(/^https?:\/\//,"").replace(/\/+$/,"")):"-")+'</div>'):'';el.innerHTML='<div class="model-card"><div class="model-head"><span class="label">当前模型组</span><span class="model-badge">'+esc(curPretty)+'</span></div>'+(cur?(''):'')+'<div class="model-row"><div class="model-row-label">切换模型组</div><select class="model-select" id="model-select" onchange="selectModel(this.value)">'+opts+'</select></div>'+(curChip?'<div class="model-meta">'+curChip+'</div>':'')+'<div class="model-btns" style="margin-top:10px"><button class="model-btn model-btn-switch" id="model-apply-btn" onclick="applySelectedModel()"'+(pending?"":" disabled")+'>'+applyBtnLabel+'</button><button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加组</button><button class="model-btn model-btn-del" onclick="deleteCurrentModelGroup()">－ 删除组</button></div></div>'}
 function render(data){if(data.error&&(!data.bots||data.bots.length===0)){showError(data.error);return}document.getElementById("pulse-dot").className="pulse";document.getElementById("last-update").textContent="更新于 "+(data.system?data.system.time:"?");if(data.error){document.getElementById("error-box").innerHTML='<div class="warn-msg">部分异常: '+esc(data.error)+'</div>'}else{document.getElementById("error-box").innerHTML=''}if(data.system){renderSystem(data.system);setSummary("summary-sys","CPU "+esc(data.system.cpu)+" | 内存 "+esc(data.system.mem));var sysMemPct=parseFloat(data.system.mem_pct);setSectionHealth("sec-sys",isNaN(sysMemPct)||sysMemPct<80)}if(data.bots&&data.bots.length>0){document.getElementById("bots-grid").innerHTML=data.bots.map(renderBot).join("");var onlineCount=data.bots.filter(function(b){return b.online===true}).length;setSummary("summary-bots",onlineCount+"/"+data.bots.length+" 在线");setSectionHealth("sec-bots",onlineCount===data.bots.length);data.bots.forEach(function(b,i){fillBotExtras(b,i,data.note_sync)})}else{document.getElementById("bots-grid").innerHTML='<div style="color:#c084a8;text-align:center;padding:40px">暂无数据</div>';setSummary("summary-bots","0/0 在线");setSectionHealth("sec-bots",false)}renderDevice(data.device);renderNavLinks(data.extra_nav);loadModelGroups();loadVoiceSwitch();setSectionHealth("sec-nav",true)}
@@ -2680,7 +2733,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type","text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            bots_js = json.dumps([{"qq": b.get("qq", ""), "role": b.get("role", "")} for b in BOTS], ensure_ascii=False)
+            bots_js = json.dumps([{"qq": b.get("qq", ""), "role": b.get("role", ""), "preset_name": get_bot_preset_name(i + 1)} for i, b in enumerate(BOTS)], ensure_ascii=False)
             user_qq = os.getenv("USER_QQ", "")
             self.wfile.write(CHAT_PAGE.replace("__BOTS_DATA__", bots_js).replace("__USER_QQ__", user_qq).encode())
         elif self.path == "/" or self.path == "/index.html":
@@ -2688,7 +2741,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            bots_js = json.dumps([{"qq": b.get("qq", ""), "role": b.get("role", "")} for b in BOTS], ensure_ascii=False)
+            bots_js = json.dumps([{"qq": b.get("qq", ""), "role": b.get("role", ""), "preset_name": get_bot_preset_name(i + 1)} for i, b in enumerate(BOTS)], ensure_ascii=False)
             self.wfile.write(HTML_PAGE.replace("__BOTS_DATA__", bots_js).replace("__DEVICE_BOT_INDEX__", str(DEVICE_BOT_INDEX)).encode())
         else:
             self.send_response(404)

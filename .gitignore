@@ -24,3 +24,6 @@ __pycache__/
 
 # 模型组配置（含 API key）
 configs/nekro-agent.yaml
+
+# 本地运维脚本（含 SSH 密码等凭据，禁止提交）
+scripts/

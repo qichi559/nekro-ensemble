@@ -907,9 +907,9 @@ def get_current_model():
             continue
         p = os.path.join(dd, "configs", "nekro-agent.yaml")
         txt = run_cmd(f"cat {p}", timeout=5) or ""
-        m = re.search(r"USE_MODEL_GROUP:\s*(\S+)", txt)
+        m = re.search(r"USE_MODEL_GROUP:\s*(.+)", txt)
         if m:
-            return m.group(1)
+            return m.group(1).strip().split(" #")[0].strip()
     return "unknown"
 
 

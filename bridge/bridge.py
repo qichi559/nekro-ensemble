@@ -74,21 +74,29 @@ MAX_FILE_HISTORY = int(os.getenv("MAX_FILE_HISTORY", "20000"))
 MAX_FILE_SIZE = 20 * 1024 * 1024  # history file > 20MB triggers compaction
 
 
-EMOTION_TAG_RE = re.compile(r"\[\[emotion:([a-zA-Z0-9_\-]+)\]\]")
+EMOTION_TAG_RE = re.compile(r"\[\[emotion:([^\]\[]*)\]\]")
+# 残缺/未闭合标签（如 [[emotion:调皮 后接正文）：删到换行或括号前
+DANGLING_EMOTION_RE = re.compile(r"\[\[emotion:[^\n\]\[]*")
 
 def parse_emotion_tag(text):
-    """提取 [[emotion:xx]] 标签，返回 (干净文本, 情感或None)"""
+    """提取 [[emotion:xx]] 标签，返回 (干净文本, 情感或None)
+    兼容 LLM 偶尔输出的混合标签（如 [[emotion:lovey-dovey撒娇]] / [[emotion:调皮]]）：
+    标签一律剥离，情感值取英文枚举前缀，取不到则交给 detect_emotion 兜底。"""
     if not text:
         return text or "", None
     m = EMOTION_TAG_RE.search(text)
-    emotion = m.group(1).lower() if m else None
-    clean = EMOTION_TAG_RE.sub("", text).strip()
+    raw = m.group(1) if m else ""
+    m2 = re.match(r"[a-zA-Z0-9_\-]+", raw)
+    emotion = m2.group(0).lower() if m2 else None
+    clean = EMOTION_TAG_RE.sub("", text)
+    clean = DANGLING_EMOTION_RE.sub("", clean).strip()
     return clean, emotion
 
 
 def add_chat_record(role, text, source="device", emotion=None):
     """添加聊天记录"""
-    text = EMOTION_TAG_RE.sub("", text or "").strip()
+    text = EMOTION_TAG_RE.sub("", text or "")
+    text = DANGLING_EMOTION_RE.sub("", text).strip()
     record = {
         "id": str(uuid.uuid4())[:8],
         "role": role,  # "user" 或 "assistant"
@@ -164,8 +172,8 @@ def filter_tts_text(text):
     text = re.sub(r'\([^)]*\)', '', text)
     text = re.sub(r'\uff08[^\uff09]*$', '', text)
     text = re.sub(r'\([^)]*$', '', text)
-    text = re.sub(r'^[^\uff08]*\uff09', '', text)
-    text = re.sub(r'^[^(]*\)', '', text)
+    text = re.sub(r'^[\uff09\)]+', '', text)
+    text = re.sub(r'[\uff08\(]+$', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -179,11 +187,11 @@ def detect_emotion(text):
     surprised_kw = ["什么？", "不是吧", "怎么会", "诶？！", "真的假的", "不会吧", "啊？！", "天哪"]
     for kw in surprised_kw:
         if kw in text:
-            return "surprised"
+            return "surprise"
     fear_kw = ["怕", "害怕", "担心", "不安", "紧张", "心慌", "吓到"]
     for kw in fear_kw:
         if kw in text:
-            return "fear"
+            return "scare"
     lovey_kw = ["赖着", "粘着", "黏着", "抱抱", "抱一会儿", "不许走", "不许跑", "陪你", "一辈子", "缠上", "不放手", "要抱", "再抱", "撒娇", "哼哼~", "嘻嘻~", "嘿嘿~", "人家", "嘛~", "啦~"]
     for kw in lovey_kw:
         if kw in text:
@@ -191,7 +199,7 @@ def detect_emotion(text):
     shy_kw = ["脸红", "害羞", "羞", "烫烫", "脸颊烫", "脸热", "不敢看", "别看我", "丢人", "不好意思", "遮住脸", "埋进", "脸埋"]
     for kw in shy_kw:
         if kw in text:
-            return "shy"
+            return "lovey-dovey"
     comfort_kw = ["没关系", "别难", "会好", "别哭", "陪在你身边", "陪着你", "不要怕", "有我在", "别担心", "没事的", "一切都会"]
     for kw in comfort_kw:
         if kw in text:
@@ -199,11 +207,11 @@ def detect_emotion(text):
     excited_kw = ["太棒了", "好耶", "兴奋", "激动", "终于", "耶！", "太好了！", "拉钩", "真的吗？！", "颤", "不能自已", "忍不住"]
     for kw in excited_kw:
         if kw in text:
-            return "excited"
+            return "energetic"
     tender_kw = ["嗯。", "别动", "就这样", "呼呼", "安心", "轻轻", "柔柔", "睡吧", "休息", "放轻松", "慢慢"]
     for kw in tender_kw:
         if kw in text:
-            return "tender"
+            return "comfort"
     happy_kw = ["哈哈", "嘻嘻", "哼哼", "嘿嘿", "开心", "高兴", "耶", "好开心", "厉害", "我想你", "喜欢你", "不错", "棒", "好哒", "好呀", "当然", "没问题"]
     for kw in happy_kw:
         if kw in text:
@@ -212,13 +220,25 @@ def detect_emotion(text):
     for kw in sad_kw:
         if kw in text:
             return "sad"
+    conniving_kw = ["绿茶", "茶艺", "假惺惺", "装无辜", "心机"]
+    for kw in conniving_kw:
+        if kw in text:
+            return "conniving"
+    storytelling_kw = ["很久很久以前", "从前有个", "传说中", "讲个故事", "故事是"]
+    for kw in storytelling_kw:
+        if kw in text:
+            return "storytelling"
+    novel_kw = ["平平淡淡", "若无其事", "淡然地说", "平静地说"]
+    for kw in novel_kw:
+        if kw in text:
+            return "novel_dialog"
     wave_count = text.count("~") + text.count("～")
     excl_count = text.count("！") + text.count("!")
     dot_count = text.count("…") + text.count("...")
     if wave_count >= 2:
         return "lovey-dovey"
     if excl_count >= 3:
-        return "excited"
+        return "energetic"
     if dot_count >= 2:
         return "sad"
     return ""

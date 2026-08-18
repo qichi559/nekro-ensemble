@@ -1188,8 +1188,13 @@ def create_model_group_on_all(group_name, chat_model, base_url, api_key):
 
 
 def fetch_models_from_api(base_url, api_key):
-    """调用 OpenAI 兼容接口 /v1/models 获取模型列表，返回 (ok, models_or_err)"""
-    url = base_url.rstrip("/") + "/v1/models"
+    """调用 OpenAI 兼容接口 /models 获取模型列表，返回 (ok, models_or_err)。
+    base_url 可能带 /v1（如 https://xxx/v1）也可能不带（如 https://xxx），自动识别。
+    """
+    u = base_url.rstrip("/")
+    if not u.endswith("/v1"):
+        u = u + "/v1"
+    url = u + "/models"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
         req = urllib.request.Request(url, headers=headers, method="GET")
@@ -1202,7 +1207,6 @@ def fetch_models_from_api(base_url, api_key):
                 models.append(mid)
         if not models:
             return False, "接口返回的模型列表为空"
-        # 排序，去重
         models = sorted(set(models))
         return True, models
     except urllib.error.HTTPError as e:

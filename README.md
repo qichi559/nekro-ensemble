@@ -34,6 +34,8 @@
 - **一键切换模型组**：运行时切换所有 Bot 的模型，无需重启容器
 - 网页聊天、TTS 音色试听与配置
 
+> 面板完整功能清单见文末「[监控面板说明](#监控面板说明)」。
+
 ---
 
 ## 核心概念
@@ -68,11 +70,7 @@
          (QQ 登录)         (QQ 登录)              (QQ 登录)         (实体设备)
 ```
 
-三条链路：
-
-1. **QQ**：QQ 消息 → NapCat（协议端）→ NekroAgent（OneBot v11）→ LLM 回复 → 语音合成 → 发回 QQ
-2. **网页**：浏览器打开面板的 `/chat`，直接通过面板转发到对应 Bot 的 NekroAgent
-3. **设备**：Stackchan 语音 → bridge → NekroAgent（SSE 适配器）→ 回复 → bridge TTS → 设备播放
+三条链路的接入方式和消息流向见上表「功能特性」。
 
 ---
 
@@ -107,14 +105,36 @@
 │   └── doubao_v3.py            # 豆包 TTS provider（小智语音引擎调用）
 └── deploy/
     ├── docker-compose.yml      # 单实例 NekroAgent + NapCat + Postgres + Qdrant 编排模板
-    └── nekro-agent.yaml.example  # NekroAgent 系统配置模板
+    └── nekro-agent.yaml.example  # NekroAgent 系统配置参考模板（可选，NekroAgent 会自动生成默认配置）
 ```
 
 ---
 
 ## 部署指南
 
-### 0. 端口规划
+### 0. 部署前准备清单
+
+开始前，先确认下面这些都有了（按部署顺序排）：
+
+| # | 要准备的东西 | 哪里获取 | 必选？ |
+|---|---|---|---|
+| 1 | 一台 Linux 服务器 | 云厂商 VPS / 自建机，需可跑 Docker | ✅ |
+| 2 | 每个 Bot 一个 QQ 账号 | 自己的 QQ（建议实名、等级别太低） | ✅ |
+| 3 | 模型 API Key | DeepSeek / Gemini / OpenAI 或中转站 | ✅ |
+| 4 | 豆包 TTS API Key + 音色 ID | 火山引擎（仅语音链路需要） | ⭕ 语音才要 |
+| 5 | 服务器 SSH 登录方式 | 密钥或密码 | ✅ |
+
+部署过程中**需要你亲手填/改的配置**（按步骤）：
+- **Step 1**：每个实例的环境变量（端口、token、密码）
+- **Step 2**：NapCat WebUI 里的 WebSocket 地址（`ws://容器名:8021`）
+- **Step 3**：compose 里多实例的 `TTS_BRIDGE_URL`（仅 2 个以上实例）
+- **Step 4/4.5**：NekroAgent 后台的模型组、人设、适配器
+- **Step 5**：`bots.json`（每个 Bot 的容器名/token/密码）和 `.env`
+- **Step 6**：bridge systemd 服务的环境变量（仅设备语音要）
+
+> 所有配置**都不需要改代码**，改完重启对应服务即可生效。
+
+### 0.5. 端口规划
 
 以 3 个 Bot 为例（数量自定，规律可类推）：
 
@@ -165,6 +185,8 @@ sudo -E docker compose -f deploy/docker-compose.yml up -d
 ```
 
 > ⚠️ 容器名与端口务必和 `bots.json` 里填的一致。
+
+> 💡 **`deploy/nekro-agent.yaml.example` 是可选参考**：NekroAgent 首次启动会在数据目录的 `configs/` 下自动生成 `nekro-agent.yaml` 默认配置，**无需手动复制**。只有当你需要预置系统级参数（如记忆开关、日志级别）时才参考此文件手动调整。
 
 ### 2. NapCat 登录
 
@@ -299,6 +321,7 @@ sudo systemctl enable --now nekro-bridge.service
 | `TTS_RESOURCE_ID` | 豆包 TTS 资源 ID | `seed-icl-2.0` 或 `seed-tts-1.0` |
 | `TTS_VOICE` | 豆包音色 ID | 每实例可不同 |
 | `OWNER_QQ` / `OWNER_NAME` | 设备消息发送者的 QQ/名字 | 各实例相同 |
+| `BRIDGE_DATA_DIR` | bridge 数据目录（TTS 配置/缓存/历史文件） | 默认 `/opt/nekro-bridge`，一般不用改 |
 
 > ⚠️ 服务名务必与 `bots.json` 里的 `bridge_service` 字段一致（默认 `nekro-bridge` / `nekro-bridge2` / …），否则面板读不到 bridge 状态。
 
@@ -334,7 +357,10 @@ services:
 
 **③ 对接 bridge**
 
-小智设备通过 SSE 连接 bridge，bridge 再把消息转发给 NekroAgent。确保 bridge 的 `ACCESS_KEY` 与 NekroAgent 后台一致、`CHANNEL_ID=private_stackchan`，小智侧的 SSE 地址指向 bridge。
+小智后端（xiaozhi-server）把 bridge 当作一个 OpenAI 兼容的 LLM 接口调用（`POST /v1/chat/completions`），bridge 再把消息通过 SSE 转发给 NekroAgent。因此：
+- 小智配置里的 LLM 接口地址指向 bridge：`http://<bridge地址>:<LISTEN_PORT>/v1/chat/completions`
+- bridge 的 `ACCESS_KEY` 与 NekroAgent 后台一致、`CHANNEL_ID=private_stackchan`
+- 小智侧无需关心 SSE 细节，由 bridge 内部处理
 
 **④ 面板配置**
 

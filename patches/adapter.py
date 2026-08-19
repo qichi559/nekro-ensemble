@@ -391,7 +391,7 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
                 _voice_on = _sw.read_text(encoding="utf-8").strip() != "0"
         except Exception:
             _voice_on = True
-        if _voice_on and voice_text and len(voice_text) <= 250:
+        if _voice_on and voice_text:
             try:
                 import asyncio as _asyncio, base64 as _b64
 

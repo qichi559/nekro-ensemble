@@ -33,6 +33,8 @@ TTS_API_KEY = os.getenv("TTS_API_KEY", "")
 TTS_RESOURCE_ID = os.getenv("TTS_RESOURCE_ID", "")
 TTS_VOICE = os.getenv("TTS_VOICE", "")
 TTS_SPEED = float(os.getenv("TTS_SPEED", "1.0"))
+# 豆包单次请求文本上限（字），超长自动分段逐段合成
+TTS_SEG_MAX = int(os.getenv("TTS_SEG_MAX", "300"))
 TTS_PITCH = float(os.getenv("TTS_PITCH", "1.0"))
 TTS_VOLUME = float(os.getenv("TTS_VOLUME", "1.0"))
 TTS_CONFIG_FILE = f"{BRIDGE_DATA_DIR}/tts_config_{LISTEN_PORT}.json"
@@ -299,18 +301,66 @@ def _tts_cache_key(text, forced_emotion=None):
 
 
 def generate_tts(text, forced_emotion=None):
-    """调用豆包 TTS API 生成语音，返回 mp3 bytes（带文件缓存）"""
+    """调用豆包 TTS API 生成语音，返回 mp3 bytes（带文件缓存）。
+    超长文本自动按句子分段逐段合成后拼接（豆包单次有长度上限）。"""
+    import os
     key = _tts_cache_key(text, forced_emotion)
     cached = _tts_cache_get(key)
     if cached:
         print(f"[TTS] 命中缓存: {len(cached)} bytes (key={key[:8]})", flush=True)
         return cached
-    import os
     os.makedirs(_tts_cache_dir(), exist_ok=True)
     filtered = filter_tts_text(text)
     if not filtered:
         return None
 
+    # 超长文本分段：豆包单次请求建议 <= TTS_SEG_MAX 字
+    segs = _split_tts_text(filtered)
+    if len(segs) > 1:
+        print(f"[TTS] 文本 {len(filtered)} 字，分段 {len(segs)} 段逐段合成...", flush=True)
+        audio_total = b""
+        for i, seg in enumerate(segs, 1):
+            part = _generate_tts_once(seg, forced_emotion)
+            if part:
+                audio_total += part
+                print(f"[TTS] 段 {i}/{len(segs)} ok ({len(part)} bytes)", flush=True)
+        if audio_total:
+            _tts_cache_put(key, audio_total)
+            return audio_total
+        print(f"[TTS] 分段合成失败", flush=True)
+        return None
+
+    return _generate_tts_once(filtered, forced_emotion)
+
+
+def _split_tts_text(text, max_len=TTS_SEG_MAX):
+    """把长文本按句号等标点切分成 <= max_len 的段列表"""
+    if len(text) <= max_len:
+        return [text]
+    import re
+    # 优先在句子边界切（中文句号、感叹号、问号、分号、换行）
+    pieces = re.split(r'(?<=[。！？；!?;\n])', text)
+    segs, cur = [], ""
+    for p in pieces:
+        if not p:
+            continue
+        if len(cur) + len(p) <= max_len:
+            cur += p
+        else:
+            if cur:
+                segs.append(cur)
+            # 单段超长则硬切
+            while len(p) > max_len:
+                segs.append(p[:max_len])
+                p = p[max_len:]
+            cur = p
+    if cur:
+        segs.append(cur)
+    return segs
+
+
+def _generate_tts_once(filtered, forced_emotion=None):
+    """单段文本调豆包 TTS，返回 mp3 bytes（无缓存逻辑，供 generate_tts 复用）"""
     p = get_tts_params()
     audio_params = {
         "format": "mp3",
@@ -341,7 +391,7 @@ def generate_tts(text, forced_emotion=None):
         },
     }
     try:
-        resp = requests.post(TTS_API_URL, json.dumps(request_json), headers=headers, timeout=30)
+        resp = requests.post(TTS_API_URL, json.dumps(request_json), headers=headers, timeout=60)
         audio_bytes = b""
         for line in resp.text.strip().split("\n"):
             if not line:
@@ -351,7 +401,6 @@ def generate_tts(text, forced_emotion=None):
                 audio_bytes += base64.b64decode(chunk["data"])
         if audio_bytes:
             print(f"[TTS] 生成成功: {len(audio_bytes)} bytes, emotion={emotion}", flush=True)
-            _tts_cache_put(key, audio_bytes)
             return audio_bytes
         else:
             print(f"[TTS] 生成失败: {resp.text[:200]}", flush=True)

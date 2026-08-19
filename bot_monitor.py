@@ -2559,6 +2559,8 @@ class MonitorHandler(BaseHTTPRequestHandler):
             except:
                 pass
         self.send_response(status)
+        # 代理响应一律禁止缓存，避免浏览器缓存旧页面（如返回监控按钮显示旧人设名）
+        self.send_header('Cache-Control', 'no-store')
         for key, val in resp_headers.items():
             if key.lower() not in ('transfer-encoding', 'connection', 'content-length'):
                 self.send_header(key, val)

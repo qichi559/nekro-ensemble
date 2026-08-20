@@ -15,6 +15,8 @@ import time
 import urllib.request
 import urllib.error
 import http.client
+import select
+import socket
 from queue import Queue, Empty
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
@@ -2414,6 +2416,16 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 return c.split('=', 1)[1] == SITE_PASSWORD
         return False
 
+    def end_headers(self):
+        """统一收尾：所有响应都声明 Connection: close（HTTP/1.0 语义），
+        服务端响应完主动关闭连接，客户端收到后也立即关闭，
+        从根上避免 8080 端口积累 CLOSE-WAIT 连接泄漏。"""
+        try:
+            self.send_header('Connection', 'close')
+        except Exception:
+            pass
+        super().end_headers()
+
     def _redirect_login(self):
         self.send_response(302)
         self.send_header('Location', '/login')
@@ -2489,9 +2501,14 @@ class MonitorHandler(BaseHTTPRequestHandler):
         try:
             conn.request(method, path, body=body, headers=headers)
             resp = conn.getresponse()
-            content = resp.read()
             status = resp.status
             resp_headers = dict(resp.getheaders())
+            # SSE 流式响应：不等结束，分块即时转发（NA WebUI 事件/聊天/日志流）
+            content_type = resp_headers.get('Content-Type', '') or resp_headers.get('content-type', '')
+            if status == 200 and 'text/event-stream' in content_type.lower():
+                # 传入上游 socket，_proxy_stream 用双端 select 探测浏览器断开
+                return self._proxy_stream(resp, bot_index, path_prefix, conn.sock)
+            content = resp.read()
             _put_conn(port, conn)
         except Exception as e:
             try: conn.close()
@@ -2501,9 +2518,14 @@ class MonitorHandler(BaseHTTPRequestHandler):
             try:
                 conn.request(method, path, body=body, headers=headers)
                 resp = conn.getresponse()
-                content = resp.read()
                 status = resp.status
                 resp_headers = dict(resp.getheaders())
+                # SSE 流式响应：同上，重试路径也走分块转发
+                content_type = resp_headers.get('Content-Type', '') or resp_headers.get('content-type', '')
+                if status == 200 and 'text/event-stream' in content_type.lower():
+                    # 重试路径也走流式转发，双端探测断开
+                    return self._proxy_stream(resp, bot_index, path_prefix, conn.sock)
+                content = resp.read()
                 _put_conn(port, conn)
             except Exception as e2:
                 try: conn.close()
@@ -2522,9 +2544,13 @@ class MonitorHandler(BaseHTTPRequestHandler):
                     conn2 = _get_conn(port)
                     conn2.request(method, path, body=body, headers=headers)
                     resp = conn2.getresponse()
-                    content = resp.read()
                     status = resp.status
                     resp_headers = dict(resp.getheaders())
+                    content_type = resp_headers.get('Content-Type', '') or resp_headers.get('content-type', '')
+                    if status == 200 and 'text/event-stream' in content_type.lower():
+                        # SSE 流不放入连接池（连接被流占用，放回池会污染复用），直接转发后关闭
+                        return self._proxy_stream(resp, bot_index, path_prefix, conn2.sock)
+                    content = resp.read()
                     _put_conn(port, conn2)
                     log("401 retry ok: bot " + str(bot_index) + " " + path)
                 except Exception as e3:
@@ -2569,6 +2595,62 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(content)))
         self.end_headers()
         self.wfile.write(content)
+
+    def _proxy_stream(self, resp, bot_index, path_prefix, upstream_sock=None):
+        """SSE 流式转发：分块读取 NA 的 event-stream 响应并即时回写浏览器。
+        不等流结束、不写 Content-Length，避免代理线程被常驻流挂死。
+        v3 双端探测：select 同时监听上游与下游 socket——
+        上游有数据就转发；任一侧断开立即退出关闭，杜绝 CLOSE-WAIT 泄漏。
+        浏览器刷新/切页时对面板发 FIN，本方法立刻感知并关闭上游连接。"""
+        down_sock = self.connection
+        up_sock = upstream_sock
+        # 上游 socket 存在则启用双端探测；否则回退为普通超时读
+        if up_sock is not None:
+            up_sock.settimeout(0.2)
+        try:
+            self.send_response(resp.status)
+            # 代理响应一律禁止缓存，避免浏览器缓存旧页面
+            self.send_header('Cache-Control', 'no-store')
+            for key, val in resp.getheaders():
+                if key.lower() not in ('transfer-encoding', 'connection', 'content-length'):
+                    self.send_header(key, val)
+            if path_prefix:
+                self.send_header('Set-Cookie', 'nekro_proxy_bot=' + str(bot_index) + '; Path=/; SameSite=Lax')
+            # SSE 没有确定长度，改用 chunked 传输，让浏览器按到达顺序实时显示
+            self.send_header('Transfer-Encoding', 'chunked')
+            self.end_headers()
+            while True:
+                if up_sock is not None:
+                    # 双向探测：任一侧可读即处理
+                    r, _, _ = select.select([down_sock, up_sock], [], [], 0.5)
+                    if not r:
+                        continue  # 两侧都静默，继续等
+                    if down_sock in r:
+                        # 下游(浏览器)可读=对端已发 FIN/关闭，立即退出
+                        break
+                    # 上游可读，走下面的 read() 转发（read 本身会再等数据到达）
+                # 上游有数据才读；read() 在 socket 有数据时立即返回
+                try:
+                    chunk = resp.read(4096)
+                except socket.timeout:
+                    # 上游 0.2s 内没数据（静默心跳间隙），不算断开，回循环继续探测
+                    continue
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass  # 浏览器已断开（切页/关闭），结束转发
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
+            try:
+                if up_sock is not None:
+                    up_sock.settimeout(None)
+            except Exception:
+                pass
 
     def do_GET(self):
         if self.path == "/login":

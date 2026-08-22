@@ -3,37 +3,229 @@
 #   原始文件：nekro_agent/adapters/onebot_v11/adapter.py
 #   项目地址：https://github.com/KroMiose/nekro-agent
 #   许可证：Nekro Agent 开源协议 V1.1（基于 Apache 2.0 修改）
-# 修改内容：增加 QQ 语音回复、LLM 情感标注、语音开关
+# 修改内容：增加 QQ 语音回复、LLM 情感标注、语音开关、QQ 聊天记录自动同步 Bridge（生图上下文）
 # ============================================================
+import json
+import os
 import re
+import threading
+import time
+import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Union
 
 from fastapi import APIRouter
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
+from nonebot import on_message, on_notice
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    GroupMessageEvent,
+    GroupUploadNoticeEvent,
+    Message,
+    MessageEvent,
+    MessageSegment,
+)
+from nonebot.matcher import Matcher
 from pydantic import Field
 
-from nekro_agent.adapters.interface.schemas.platform import (
+from nekro_agent.adapters.interface import (
+    BaseAdapter,
     PlatformChannel,
+    PlatformMessage,
+    PlatformUser,
+    collect_message,
+)
+from nekro_agent.adapters.interface.schemas.extra import PlatformMessageExt
+from nekro_agent.adapters.interface.schemas.platform import (
     PlatformSendRequest,
     PlatformSendResponse,
     PlatformSendSegmentType,
-    PlatformUser,
 )
-from nekro_agent.adapters.onebot_v11.matchers.message import register_matcher
+from nekro_agent.adapters.onebot_v11.tools.convertor import convert_chat_message
+from nekro_agent.adapters.onebot_v11.tools.onebot_util import (
+    gen_chat_text,
+    get_chat_info,
+    get_message_reply_info,
+    get_user_name,
+)
 from nekro_agent.core import config, logger
+from nekro_agent.core.core_utils import ExtraField
 from nekro_agent.core.os_env import OsEnv
 from nekro_agent.models.db_chat_channel import DBChatChannel
+from nekro_agent.models.db_user import DBUser
 from nekro_agent.schemas.agent_message import AgentMessageSegment, AgentMessageSegmentType
-from nekro_agent.schemas.chat_message import ChatType
+from nekro_agent.schemas.chat_message import ChatMessageSegmentForward, ChatType
 from nekro_agent.schemas.i18n import i18n_text
 from nekro_agent.services.command.schemas import CommandResponse
-from nekro_agent.core.core_utils import ExtraField
 
-from ..interface.base import AdapterMetadata, BaseAdapter, BaseAdapterConfig
+from ..interface.base import AdapterMetadata, BaseAdapterConfig
 from .core.bot import get_bot
 from .tools.at_parser import SegAt, parse_at_from_text
 from .tools.convertor import get_channel_type
+
+
+def _sync_chat_to_bridge(role: str, text: str, emotion: str = "", source: str = "qq"):
+    """异步将 QQ 聊天记录同步到当前实例对应的 Bridge，供监控面板生图上下文及历史查询"""
+    text = (text or "").strip()
+    if not text:
+        return
+
+    def _worker():
+        try:
+            tts_url = os.environ.get("TTS_BRIDGE_URL", "http://172.21.0.1:8090/api/tts")
+            if "/api/" in tts_url:
+                bridge_base = tts_url.rsplit("/api/", 1)[0]
+            else:
+                bridge_base = "http://172.21.0.1:8090"
+            record_url = f"{bridge_base}/api/record-chat"
+            payload = json.dumps({
+                "role": role,
+                "text": text,
+                "source": source,
+                "emotion": emotion or "",
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                record_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                pass
+        except Exception:
+            pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def register_custom_matcher(adapter: BaseAdapter):
+    """注册 OneBot 消息与事件匹配器，增加 QQ 消息抄送 Bridge 逻辑"""
+
+    @on_message(priority=99999, block=False).handle()
+    async def _(_: Matcher, event: Union[MessageEvent, GroupMessageEvent], bot: Bot):
+        """消息匹配器（带 QQ 消息自动同步至 Bridge）"""
+
+        # 频道信息处理
+        channel_id, chat_type = await get_chat_info(event=event)
+        plt_channel: PlatformChannel = PlatformChannel(channel_id=channel_id, channel_name="", channel_type=chat_type)
+        db_chat_channel: DBChatChannel = await plt_channel.get_db_chat_channel(adapter)
+
+        if not db_chat_channel.channel_name:
+            plt_channel = await adapter.get_channel_info(channel_id)
+
+        # 用户信息处理
+        sender_name: Optional[str] = event.sender.nickname or event.sender.card
+        assert sender_name
+
+        user_qq = str(event.sender.user_id)
+        user_avatar: str = f"https://q1.qlogo.cn/g?b=qq&nk={user_qq}&s=640"
+
+        plt_user: PlatformUser = PlatformUser(
+            platform_name="qq",
+            user_id=user_qq,
+            user_name=sender_name,
+            user_avatar=user_avatar,
+        )
+
+        # 消息内容处理
+        content_data, msg_tome, message_id = await convert_chat_message(event, event.to_me, bot, db_chat_channel, adapter)
+        if not content_data:  # 忽略无法转换的消息
+            logger.warning(f"无法转换的消息: {event.get_plaintext()}")
+            return
+
+        sender_nickname: str = await get_user_name(
+            event=event,
+            bot=bot,
+            user_id=plt_user.user_id,
+            db_chat_channel=db_chat_channel,
+        )
+        content_text, is_tome = await gen_chat_text(event=event, bot=bot, db_chat_channel=db_chat_channel)
+
+        # 合并转发消息：使用 FORWARD 段的完整文本替代 gen_chat_text 的简略占位
+        for seg in content_data:
+            if isinstance(seg, ChatMessageSegmentForward):
+                content_text = seg.text
+                break
+
+        ignored_prefixes = (
+            [config.AI_COMMAND_OUTPUT_PREFIX, *config.AI_IGNORED_PREFIXES]
+            if config.AI_COMMAND_OUTPUT_PREFIX
+            else config.AI_IGNORED_PREFIXES
+        )
+        if any(content_text.startswith(prefix) for prefix in ignored_prefixes):
+            logger.info(f"忽略前缀匹配的消息: {content_text[:32]}...")
+            return
+
+        ref_msg_id = await get_message_reply_info(event=event)
+
+        plt_msg: PlatformMessage = PlatformMessage(
+            message_id=message_id,
+            sender_id=plt_user.user_id,
+            sender_name=sender_name,
+            sender_nickname=sender_nickname,
+            content_data=content_data,
+            content_text=content_text,
+            is_tome=bool(is_tome or msg_tome),
+            timestamp=int(time.time()),
+            ext_data=PlatformMessageExt(ref_msg_id=ref_msg_id),
+        )
+
+        # QQ 对话同步到 Bridge：私聊或被@/回复时，自动将用户输入同步到 Bridge
+        if (chat_type == ChatType.PRIVATE or is_tome or msg_tome) and content_text.strip():
+            _sync_chat_to_bridge("user", content_text.strip(), source="qq")
+
+        # 提交收集消息
+        await collect_message(adapter, plt_channel, plt_user, plt_msg)
+
+    @on_notice(priority=99999, block=False).handle()
+    async def _(_: Matcher, event: GroupUploadNoticeEvent, bot: Bot):
+        """上传事件匹配器"""
+        # 频道信息处理
+        channel_id, chat_type = await get_chat_info(event=event)
+        plt_channel: PlatformChannel = PlatformChannel(channel_id=channel_id, channel_name="", channel_type=chat_type)
+        db_chat_channel: DBChatChannel = await plt_channel.get_db_chat_channel(adapter)
+
+        # 用户信息处理
+        platform_userid: str = str(event.user_id)
+        user: Optional[DBUser] = await DBUser.get_or_none(adapter_key=adapter.key, platform_userid=platform_userid)
+
+        if not user:
+            if platform_userid == (await adapter.get_self_info()).user_id:
+                return
+            raise ValueError(f"用户 {platform_userid} 尚未注册，请先发送任意消息注册后即可上传文件") from None
+
+        if not user.is_active:
+            logger.info(f"用户 {platform_userid} 被封禁，封禁结束时间: {user.ban_until}")
+            return
+
+        # 用户信息处理
+        sender_name: Optional[str] = user.username
+        plt_user: PlatformUser = PlatformUser(platform_name="qq", user_id=platform_userid, user_name=sender_name)
+
+        # 消息内容处理
+        content_data, msg_tome, message_id = await convert_chat_message(event, False, bot, db_chat_channel, adapter)
+        if not content_data:  # 忽略无法转换的消息
+            return
+
+        sender_nickname: str = await get_user_name(
+            event=event,
+            bot=bot,
+            user_id=platform_userid,
+            db_chat_channel=db_chat_channel,
+        )
+
+        plt_msg: PlatformMessage = PlatformMessage(
+            message_id=message_id,
+            sender_id=platform_userid,
+            sender_name=sender_name,
+            sender_nickname=sender_nickname,
+            content_data=content_data,
+            content_text="",
+            is_tome=bool(msg_tome),
+            timestamp=int(time.time()),
+        )
+
+        # 提交收集消息
+        await collect_message(adapter, plt_channel, plt_user, plt_msg)
 
 
 class OnebotV11Config(BaseAdapterConfig):
@@ -153,9 +345,7 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
 
     async def init(self) -> None:
         """初始化适配器"""
-        from . import matchers
-
-        register_matcher(self)
+        register_custom_matcher(self)
 
     async def cleanup(self) -> None:
         """清理适配器"""
@@ -199,16 +389,17 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
         chat_type = db_chat_channel.chat_type
         chat_id = int(db_chat_channel.channel_id.split("_")[1])
 
+        # 同步合并转发消息至 Bridge
+        if text.strip():
+            _sync_chat_to_bridge("assistant", text.strip(), emotion="", source="qq")
+
         # 智能拆分：优先按 ====== 分隔符，其次按双换行，最后按固定行数
         sections: List[str] = []
         if re.search(r"={3,}", text):
-            # 按 ===== 标题行拆分
             sections = re.split(r"\n(?=={3,})", text)
         elif "\n\n" in text:
-            # 按双换行拆分（如插件列表）
             sections = text.split("\n\n")
         else:
-            # 按固定行数拆分（每 20 行一段）
             lines = text.split("\n")
             for i in range(0, len(lines), 20):
                 sections.append("\n".join(lines[i : i + 20]))
@@ -248,6 +439,7 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
 
         nodes: list[dict[str, Any]] = []
         current_message = Message()
+        all_text_parts = []
 
         def flush_current() -> None:
             if current_message:
@@ -268,6 +460,7 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
                 text = item.content.strip()
                 if not text:
                     continue
+                all_text_parts.append(text)
                 if current_message:
                     flush_current()
                 current_message.append(MessageSegment.text(text))
@@ -282,6 +475,9 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
                 flush_current()
 
         flush_current()
+
+        if all_text_parts:
+            _sync_chat_to_bridge("assistant", "\n".join(all_text_parts), emotion="", source="qq")
 
         if not nodes:
             raise ValueError("无法构建合并转发节点")
@@ -346,21 +542,19 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
             if segment.type == PlatformSendSegmentType.TEXT:
                 _clean_seg, _seg_emo = _strip_emotion(segment.content)
                 if _clean_seg.strip():
-                    # NoneBot 特有功能：解析文本中的 @ 信息
                     seg_data = await parse_at_from_text(_clean_seg, db_chat_channel)
 
                     for seg in seg_data:
                         if isinstance(seg, str):
                             if seg.strip():
                                 message.append(MessageSegment.text(seg))
-                        elif isinstance(seg, SegAt):  # SegAt 对象
+                        elif isinstance(seg, SegAt):
                             message.append(MessageSegment.at(user_id=seg.platform_user_id))
 
             elif segment.type == PlatformSendSegmentType.AT:
                 if segment.at_info:
                     message.append(MessageSegment.at(user_id=segment.at_info.platform_user_id))
             elif segment.type == PlatformSendSegmentType.IMAGE:
-                # 图片以富文本形式发送
                 if segment.file_path:
                     file_path = Path(segment.file_path)
                     if file_path.exists():
@@ -370,7 +564,7 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
             else:
                 logger.warning(f"Unsupported segment type in normal mode: {segment.type}")
 
-        # ===== QQ 语音回复（文字与语音分两条消息发送，调 bridge TTS）=====
+        # ===== 提取纯文本与情感标签 =====
         _raw_voice = "".join(
             (seg.content or "") for seg in request.segments
             if seg.type == PlatformSendSegmentType.TEXT
@@ -380,6 +574,11 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
         sent_id = None
         if message:
             sent_id = await self._send_to_chat(request.chat_key, message)
+
+        # ===== 同步 Bot 回复至 Bridge 聊天记录（供生图上下文及面板展示）=====
+        if voice_text:
+            _sync_chat_to_bridge("assistant", voice_text, emotion=_voice_emotion or "", source="qq")
+
         # 语音开关：数据目录 voice_switch 文件内容为 "0" 时关闭语音
         _voice_on = True
         try:
@@ -391,13 +590,16 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
                 _voice_on = _sw.read_text(encoding="utf-8").strip() != "0"
         except Exception:
             _voice_on = True
+
         if _voice_on and voice_text:
             try:
-                import asyncio as _asyncio, base64 as _b64
+                import asyncio as _asyncio
+                import base64 as _b64
 
                 def _gen_voice():
-                    import urllib.request as _urlreq, json as _json
+                    import json as _json
                     import os as _os_tts
+                    import urllib.request as _urlreq
                     _tts_url = _os_tts.environ.get("TTS_BRIDGE_URL", "http://172.21.0.1:8090/api/tts")
                     try:
                         req = _urlreq.Request(
@@ -473,11 +675,8 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
         """发送消息到指定聊天"""
         bot: Bot = get_bot()
 
-        # 获取聊天频道信息
         db_chat_channel = await DBChatChannel.get_channel(chat_key=chat_key)
         chat_type = db_chat_channel.chat_type
-
-        # 从channel_id中提取真实的ID
         chat_id = int(db_chat_channel.channel_id.split("_")[1])
 
         if chat_type is ChatType.GROUP:
@@ -519,15 +718,7 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
         return PlatformChannel(channel_id=channel_id, channel_name=channel_name, channel_type=chat_type)
 
     async def send_poke(self, chat_key: str, target_user_id: str) -> bool:
-        """发送戳一戳
-
-        Args:
-            chat_key: 聊天频道 key
-            target_user_id: 被戳用户的 platform_userid (QQ号)
-
-        Returns:
-            bool: 是否成功
-        """
+        """发送戳一戳"""
         try:
             bot: Bot = get_bot()
             db_chat_channel = await DBChatChannel.get_channel(chat_key=chat_key)
@@ -549,15 +740,7 @@ class OnebotV11Adapter(BaseAdapter[OnebotV11Config]):
             return True
 
     async def set_message_reaction(self, message_id: str, status: bool = True) -> bool:
-        """设置消息反应（NoneBot 实现）
-
-        Args:
-            message_id (str): 消息ID
-            status (bool): True为设置反应，False为取消反应
-
-        Returns:
-            bool: 是否成功设置
-        """
+        """设置消息反应（NoneBot 实现）"""
         try:
             bot: Bot = get_bot()
             await bot.call_api(

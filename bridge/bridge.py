@@ -747,6 +747,23 @@ def api_send_message():
     return jsonify(result)
 
 
+@app.route("/api/record-chat", methods=["POST"])
+def api_record_chat():
+    """接收外部（如 QQ 适配器、多端同步）上报的聊天记录"""
+    data = request.get_json(silent=True) or {}
+    role = data.get("role", "user")
+    text = (data.get("text") or "").strip()
+    source = data.get("source", "qq")
+    emotion = (data.get("emotion") or "").strip() or None
+    if not text:
+        return jsonify({"ok": False, "msg": "text is empty"}), 400
+
+    clean_text, parsed_emotion = parse_emotion_tag(text)
+    final_emotion = emotion or parsed_emotion or None
+    add_chat_record(role, clean_text, source=source, emotion=final_emotion)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/tts", methods=["POST"])
 def api_tts():
     """单独生成 TTS 音频"""

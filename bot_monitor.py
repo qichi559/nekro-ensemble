@@ -2199,6 +2199,20 @@ function pollHistory(){
     firstLoad=false;
   }).catch(()=>{});
 }
+function getMsgContext(btn){
+  var msgEl=btn?btn.closest(".msg"):null;
+  var container=document.getElementById("messages");
+  if(!msgEl||!container)return "";
+  var all=Array.prototype.slice.call(container.querySelectorAll(".msg"));
+  var idx=all.indexOf(msgEl);
+  if(idx<0)return "";
+  var parts=[];
+  for(var i=Math.max(0,idx-3);i<=Math.min(all.length-1,idx+3);i++){
+    var b=all[i].querySelector(".msg-bubble");
+    if(b)parts.push(b.textContent);
+  }
+  return parts.join("\n");
+}
 function appendMsg(msg){
   var container=document.getElementById("messages");
   if(!container)return;
@@ -2224,7 +2238,7 @@ function appendMsg(msg){
   html+="<div class='msg-meta'><span>"+esc(msg.timestamp||"")+"</span>";
   if(msg.role==="assistant"){
     html+='<button class="msg-play-btn" id="btn-'+msgId+'" onclick="togglePlay(&#39;'+msgId+'&#39;)">▶ 播放</button>';
-    html+='<button class="msg-prompt-btn" onclick="openPromptModal('+currentBot+', this.closest(&#39;.msg-body&#39;).querySelector(&#39;.msg-bubble&#39;).textContent)">🎨 生图</button>';
+    html+='<button class="msg-prompt-btn" onclick="openPromptModal('+currentBot+', getMsgContext(this))">🎨 生图</button>';
   }
   html+="</div></div>";
   div.innerHTML=html;
@@ -2426,6 +2440,7 @@ document.getElementById("messages").addEventListener("scroll",function(){
 
 var currentPromptBot = 1;
 var lastPromptData = null;
+var promptReqSeq = 0;
 
 function openPromptModal(botIndex, prefilledContext) {
   if (botIndex) currentPromptBot = parseInt(botIndex) || 1;
@@ -2454,10 +2469,13 @@ function switchPromptBot(botIndex) {
   tabs.forEach(function(t, i) {
     t.classList.toggle("active", (i + 1) === currentPromptBot);
   });
+  var ctxInput = document.getElementById("pm-ctx-input");
+  if (ctxInput) ctxInput.value = "";
   executeGeneratePrompt();
 }
 
 function executeGeneratePrompt() {
+  var seq = ++promptReqSeq;
   var btn = document.getElementById("pm-gen-btn");
   var btnText = document.getElementById("pm-gen-btn-text");
   var ctxInput = document.getElementById("pm-ctx-input");
@@ -2477,6 +2495,7 @@ function executeGeneratePrompt() {
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
+    if (seq !== promptReqSeq) return;
     if (btn) btn.disabled = false;
     if (btnText) btnText.textContent = "✨ 重新提炼 / 生成 Prompt";
     if (d && d.ok) {
@@ -2487,6 +2506,7 @@ function executeGeneratePrompt() {
     }
   })
   .catch(function(err) {
+    if (seq !== promptReqSeq) return;
     if (btn) btn.disabled = false;
     if (btnText) btnText.textContent = "✨ 重新提炼 / 生成 Prompt";
     showToast("请求失败: " + err.message, "error");
@@ -2552,7 +2572,7 @@ function copyPromptText(elementId, btn) {
 }
 
 function copyAllPrompts(btn) {
-  if (!lastPromptData) return;
+  if (!lastPromptData) { showToast("还没有可复制的 Prompt", "error"); return; }
   var allText = "### Positive Prompt:\n" + (lastPromptData.positive_prompt || "") + "\n\n### Negative Prompt:\n" + (lastPromptData.negative_prompt || "");
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(allText).then(function() {
@@ -2563,6 +2583,19 @@ function copyAllPrompts(btn) {
         setTimeout(function() { btn.textContent = old; }, 1200);
       }
     });
+  } else {
+    var ta = document.createElement("textarea");
+    ta.value = allText;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch(e) {}
+    document.body.removeChild(ta);
+    showToast("Prompt 已全部复制 ✓");
+    if (btn) {
+      var old = btn.textContent;
+      btn.textContent = "全部已复制 ✓";
+      setTimeout(function() { btn.textContent = old; }, 1200);
+    }
   }
 }
 
@@ -3219,6 +3252,7 @@ function pad(n){return n<10?"0"+n:n}
 
 var currentPromptBot = 1;
 var lastPromptData = null;
+var promptReqSeq = 0;
 
 function openPromptModal(botIndex, prefilledContext) {
   if (botIndex) currentPromptBot = parseInt(botIndex) || 1;
@@ -3247,10 +3281,13 @@ function switchPromptBot(botIndex) {
   tabs.forEach(function(t, i) {
     t.classList.toggle("active", (i + 1) === currentPromptBot);
   });
+  var ctxInput = document.getElementById("pm-ctx-input");
+  if (ctxInput) ctxInput.value = "";
   executeGeneratePrompt();
 }
 
 function executeGeneratePrompt() {
+  var seq = ++promptReqSeq;
   var btn = document.getElementById("pm-gen-btn");
   var btnText = document.getElementById("pm-gen-btn-text");
   var ctxInput = document.getElementById("pm-ctx-input");
@@ -3270,6 +3307,7 @@ function executeGeneratePrompt() {
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
+    if (seq !== promptReqSeq) return;
     if (btn) btn.disabled = false;
     if (btnText) btnText.textContent = "✨ 重新提炼 / 生成 Prompt";
     if (d && d.ok) {
@@ -3280,6 +3318,7 @@ function executeGeneratePrompt() {
     }
   })
   .catch(function(err) {
+    if (seq !== promptReqSeq) return;
     if (btn) btn.disabled = false;
     if (btnText) btnText.textContent = "✨ 重新提炼 / 生成 Prompt";
     showToast("请求失败: " + err.message, "error");
@@ -3345,7 +3384,7 @@ function copyPromptText(elementId, btn) {
 }
 
 function copyAllPrompts(btn) {
-  if (!lastPromptData) return;
+  if (!lastPromptData) { showToast("还没有可复制的 Prompt", "error"); return; }
   var allText = "### Positive Prompt:\n" + (lastPromptData.positive_prompt || "") + "\n\n### Negative Prompt:\n" + (lastPromptData.negative_prompt || "");
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(allText).then(function() {
@@ -3356,6 +3395,19 @@ function copyAllPrompts(btn) {
         setTimeout(function() { btn.textContent = old; }, 1200);
       }
     });
+  } else {
+    var ta = document.createElement("textarea");
+    ta.value = allText;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch(e) {}
+    document.body.removeChild(ta);
+    showToast("Prompt 已全部复制 ✓");
+    if (btn) {
+      var old = btn.textContent;
+      btn.textContent = "全部已复制 ✓";
+      setTimeout(function() { btn.textContent = old; }, 1200);
+    }
   }
 }
 

@@ -116,7 +116,7 @@ def get_bot_data_dir(bot_index):
         pass
     return ""
 
-MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts"}
+MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt"}
 
 def is_monitor_route(path):
     if path in MONITOR_API_ROUTES:
@@ -1384,6 +1384,168 @@ def fetch_models_from_api(base_url, api_key):
         return False, str(e)
 
 
+
+# ===== AI 场景生图 Prompt 提炼模块 =====
+
+BOT_PERSONA_VISUAL_BENCHMARKS = {
+    1: {
+        "name": "雾岛澪",
+        "role": "魅魔死宅同居女友",
+        "tags": "- 核心外貌: 1girl, solo, succubus, gothic, dark hair, jet black hair, very long hair, straight hair, blunt bangs, low twintails, cold blue eyes, calm eyes, mole under right eye, beauty mark under eye, voluptuous, large breasts, deep cleavage, tiny waist, wide hips, slender legs\n- 服饰: black off-shoulder sweater, off-shoulder knit, bare shoulders, black miniskirt, black thighhighs, zettai ryouiki, cross necklace, choker\n- 魅魔特征: small devil horns, demon horns, black tail, heart-shaped tail tip\n- 场景: 现代温馨公寓、客厅沙发、昏暗温馨暖光、游戏手柄、慵懒死宅氛围",
+        "fallback_positive": "masterpiece, best quality, ultra-detailed, anime artwork, 1girl, solo, succubus, gothic, jet black hair, very long hair, straight hair, blunt bangs, low twintails, cold blue eyes, half-closed eyes, mole under right eye, beauty mark, voluptuous, large breasts, deep cleavage, tiny waist, wide hips, slender legs, black off-shoulder sweater, off-shoulder knit, bare shoulders, black miniskirt, black thighhighs, cross necklace, choker, small devil horns, demon horns, black tail, heart-shaped tail tip, sitting on couch, holding game controller, cozy modern apartment living room, sofa, warm ambient lighting, dim room, soft light",
+        "fallback_summary": "深夜的温馨公寓里，暖黄色的台灯静静亮着。澪慵懒地蜷缩在客厅沙发上，抱着抱枕靠着你，墨黑色的低双马尾散落下来。头顶微小的恶魔角与心形尾巴尖在放松时悄悄探出，冰蓝色的眼眸带着微醺般的娇懒与依恋，正专注地看着屏幕与你依偎在一起。",
+    },
+    2: {
+        "name": "霁月",
+        "role": "情感过敏症犬系依恋少女/合租人",
+        "tags": "- 核心外貌: 1girl, solo, dog-like dependent girl, sweet face, gentle expression, light flax hair, light brown hair, very long wavy hair, airy bangs, white flower hair ornament behind ear, amber eyes, light brown eyes, sweet expression, contrasting voluptuous body, gigantic breasts, huge breasts, deep cleavage, hourglass figure, tiny waist, smooth plump thighs, bare feet\n- 服饰: white halter dress, light milk-white sundress, backless dress, halterneck, completely bare back, exposed spine, shoulder blades, heart-shaped neckline, bare collarbone, no necklace, pure white sheer fabric\n- 场景: 暖色调木地板房间、玄关、沙发、地毯、蜷缩在主人身旁、阳光微照",
+        "fallback_positive": "masterpiece, best quality, ultra-detailed, anime artwork, 1girl, solo, dog-like dependent girl, sweet face, gentle expression, light flax hair, light brown hair, very long wavy hair, airy bangs, white flower hair ornament behind ear, amber eyes, light brown eyes, sweet smile, blushing, contrasting voluptuous body, gigantic breasts, huge breasts, deep cleavage, hourglass figure, tiny waist, smooth plump thighs, bare feet, white halter dress, light milk-white sundress, backless dress, halterneck, completely bare back, exposed spine, shoulder blades, heart-shaped neckline, bare collarbone, no necklace, sitting on wooden floor, leaning against user, cozy sunlit room, warm sunlight, window, soft shadows",
+        "fallback_summary": "温馨明亮的合租房内，午后柔和的阳光洒在木地板上。霁月一袭奶白色的挂脖露背轻薄吊带裙，大露背展露出白皙的蝴蝶骨与优美脊柱线。她像一只终于找到归宿的乖巧小犬，轻轻蜷坐在你的腿边，浅棕色的琥珀瞳仁盛着糖一般的依恋，指尖悄悄牵着你的衣角，贪恋着你掌心的温度。",
+    },
+    3: {
+        "name": "爱弥斯",
+        "role": "隧者共鸣者/飞行雪绒歌手/星炬学院学生",
+        "tags": "- 核心外貌: 1girl, solo, magical idol singer, sci-fi resonator, sakura pink hair, golden highlights, gradient hair, pink to white hair tips, ahoge, very long high ponytail, floor-length ponytail, cross-star eyes, star-shaped pupils, heterochromia, amber gold eyes, rose gold eyes, glowing heart crest on chest, heart-shaped resonance mark between breasts, gradient chest tattoo (pink to light blue), voluptuous, toned body, tiny waist, flat stomach, navel, long slender legs\n- 服饰: futuristic idol costume, sci-fi idol dress, high-tech ornaments, detached sleeves, thigh strap, white and rose gold accents\n- 场景: 拉海洛冰原、渐湖边的湖畔小屋、雪景、窗外星空与极光、纯白与浅蓝雪景",
+        "fallback_positive": "masterpiece, best quality, ultra-detailed, anime artwork, 1girl, solo, magical idol singer, sci-fi resonator, sakura pink hair, golden highlights, gradient hair, pink to white hair tips, ahoge, very long high ponytail, floor-length ponytail, cross-star eyes, star-shaped pupils, heterochromia, amber gold eyes, rose gold eyes, glowing heart crest on chest, heart-shaped resonance mark between breasts, gradient chest tattoo, voluptuous, toned body, tiny waist, flat stomach, navel, long slender legs, futuristic idol dress, detached sleeves, thigh strap, white and rose gold accents, smile, joyful expression, head tilt, holding hands, snowy lakeside house, window, lahailo icefield, frozen lake, starry night sky, aurora borealis, snowflakes, glowing light particles, cinematic lighting",
+        "fallback_summary": "拉海洛冰原深处的渐湖边，小屋窗外是漫天璀璨的极光与纷飞的细雪。爱弥斯扎着及臀的超长粉金高马尾，头顶呆毛随着雀跃轻晃，胸口爱心状的共鸣声痕泛着桃白水蓝的微光。她十字星状的琥珀玫瑰金双瞳倒映着星河，眉眼弯弯地扑进你怀里，用充满元气又满含深情的嗓音为你轻声哼唱着恋曲。",
+    }
+}
+
+def _get_llm_for_prompt():
+    """获取当前可用于提炼生图 Prompt 的 LLM 配置 (base_url, api_key, model)"""
+    try:
+        dd = get_bot_data_dir(1)
+        if dd:
+            p = os.path.join(dd, "configs", "nekro-agent.yaml")
+            if os.path.exists(p):
+                import yaml
+                with open(p, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f)
+                active_group = cfg.get("USE_MODEL_GROUP", "")
+                groups = cfg.get("MODEL_GROUPS", {})
+                if active_group in groups:
+                    g = groups[active_group]
+                    if g.get("MODEL_TYPE") == "chat" and g.get("CHAT_MODEL") and g.get("BASE_URL"):
+                        return g.get("BASE_URL", "").rstrip("/"), g.get("API_KEY", ""), g.get("CHAT_MODEL", "")
+                for gname, g in groups.items():
+                    if g.get("MODEL_TYPE") == "chat" and g.get("CHAT_MODEL") and g.get("BASE_URL") and g.get("API_KEY"):
+                        return g.get("BASE_URL", "").rstrip("/"), g.get("API_KEY", ""), g.get("CHAT_MODEL", "")
+    except Exception as e:
+        log(f"get_llm_for_prompt error: {e}")
+    return None, None, None
+
+def generate_scene_prompt(bot_index, custom_context="", style="novelai"):
+    """根据聊天上下文与人设外貌生成生图 Prompt"""
+    try:
+        idx = int(bot_index)
+        if not (1 <= idx <= len(BOTS)):
+            idx = 1
+    except Exception:
+        idx = 1
+
+    benchmark = BOT_PERSONA_VISUAL_BENCHMARKS.get(idx, BOT_PERSONA_VISUAL_BENCHMARKS[1])
+    preset_name = get_bot_preset_name(idx) or benchmark["name"]
+
+    chat_text = ""
+    if not custom_context:
+        port = get_bridge_port(idx)
+        try:
+            st, content = proxy_to_bridge("GET", "/api/chat-history", port=port)
+            if st == 200:
+                data = json.loads(content.decode("utf-8"))
+                msgs = data.get("data", [])[-8:]
+                chat_lines = [f"{m.get('role')}: {m.get('text')}" for m in msgs if m.get("text")]
+                chat_text = "\n".join(chat_lines)
+        except Exception as e:
+            log(f"fetch chat history for prompt error: {e}")
+    else:
+        chat_text = custom_context.strip()
+
+    base_url, api_key, model = _get_llm_for_prompt()
+    if base_url and api_key and model:
+        sys_prompt = f"""You are an expert anime AI art prompt engineer specializing in NovelAI Diffusion V3, Stable Diffusion, and Danbooru tag conventions.
+Your mission is to analyze the given character base appearance and the RECENT CHAT CONTEXT between the character and the user, and synthesize a high-consistency, contextually accurate visual scene with English Danbooru tags and a vivid Chinese scene description.
+
+[Character Appearance Benchmark - {preset_name} ({benchmark['role']})]:
+{benchmark['tags']}
+
+Output strictly valid JSON:
+{{
+  "character_name": "{preset_name}",
+  "scene_summary": "50-100字优美细腻的中文画面小传，生动描绘当下时间、地点、神态微表情、肢体动作、衣着状态与互动氛围",
+  "positive_prompt": "masterpiece, best quality, ultra-detailed, anime artwork, (character tags), (current outfit tags), (expression/emotion tags), (pose/action tags), (environment/background tags), (lighting tags)",
+  "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured",
+  "parameters": {{
+    "model": "NovelAI Diffusion V3 (Anime)",
+    "resolution": "832x1216",
+    "steps": 28,
+    "scale": 5.5,
+    "sampler": "Euler Ancestral"
+  }}
+}}
+"""
+        user_content = f"【Recent Chat Context】:\n{chat_text if chat_text else '日常温馨相伴互动'}\n\nPlease extract the scene and synthesize the Prompt."
+        try:
+            req_data = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                "temperature": 0.7
+            }
+            url = f"{base_url}/chat/completions"
+            req = urllib.request.Request(url, data=json.dumps(req_data).encode("utf-8"), headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            })
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                raw_out = res["choices"][0]["message"]["content"].strip()
+                # 剥离 markdown 代码块
+                if "```" in raw_out:
+                    m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw_out)
+                    if m:
+                        raw_out = m.group(1).strip()
+                parsed = json.loads(raw_out)
+                return {
+                    "ok": True,
+                    "character_name": parsed.get("character_name", preset_name),
+                    "role": benchmark["role"],
+                    "scene_summary": parsed.get("scene_summary", benchmark["fallback_summary"]),
+                    "positive_prompt": parsed.get("positive_prompt", benchmark["fallback_positive"]),
+                    "negative_prompt": parsed.get("negative_prompt", "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured"),
+                    "parameters": parsed.get("parameters", {
+                        "model": "NovelAI Diffusion V3 (Anime)",
+                        "resolution": "832x1216",
+                        "steps": 28,
+                        "scale": 5.5,
+                        "sampler": "Euler Ancestral"
+                    }),
+                    "nai_url": "https://nai.sta1n.cn/"
+                }
+        except Exception as e:
+            log(f"LLM generate_scene_prompt failed, falling back to rule tags: {e}")
+
+    # Fallback 兜底生成
+    return {
+        "ok": True,
+        "character_name": preset_name,
+        "role": benchmark["role"],
+        "scene_summary": benchmark["fallback_summary"],
+        "positive_prompt": benchmark["fallback_positive"],
+        "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured",
+        "parameters": {
+            "model": "NovelAI Diffusion V3 (Anime)",
+            "resolution": "832x1216",
+            "steps": 28,
+            "scale": 5.5,
+            "sampler": "Euler Ancestral"
+        },
+        "nai_url": "https://nai.sta1n.cn/"
+    }
+
+
 def _replace_llm_in_config(new_value):
     """用Python直接读写.config.yaml，替换selected_module下的LLM值。
     比sed更可靠，不受缩进空格数影响。返回是否成功。
@@ -1759,6 +1921,148 @@ body{
 .scroll-bottom:hover{transform:translateY(-2px)}
 .toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);z-index:60;background:rgba(20,8,36,.9);border:1px solid rgba(244,114,182,.3);color:#fce7f3;font-size:.8rem;padding:10px 22px;border-radius:24px;opacity:0;pointer-events:none;transition:all .25s;backdrop-filter:blur(10px)}
 .toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+
+/* ===== Prompt Modal ===== */
+.prompt-modal-overlay{
+  position:fixed;inset:0;z-index:99999;
+  background:rgba(10,4,20,0.78);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:all .3s ease;
+  padding:16px;box-sizing:border-box;
+}
+.prompt-modal-overlay.active{opacity:1;pointer-events:auto}
+.prompt-modal{
+  background:linear-gradient(160deg,#1f0c35 0%,#281042 50%,#1a082b 100%);
+  border:1px solid rgba(244,114,182,0.35);
+  box-shadow:0 20px 60px rgba(0,0,0,0.6),0 0 30px rgba(236,72,153,0.25);
+  border-radius:24px;width:100%;max-width:680px;max-height:90vh;
+  display:flex;flex-direction:column;overflow:hidden;
+  transform:scale(0.92) translateY(20px);transition:all .3s cubic-bezier(0.34,1.56,0.64,1);
+  box-sizing:border-box;
+}
+.prompt-modal-overlay.active .prompt-modal{transform:scale(1) translateY(0)}
+.prompt-header{
+  padding:16px 20px;
+  background:rgba(26,10,46,0.65);
+  border-bottom:1px solid rgba(244,114,182,0.18);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.prompt-header-title{
+  font-size:1.1rem;font-weight:700;
+  background:linear-gradient(90deg,#f472b6,#c084fc,#38bdf8);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  display:flex;align-items:center;gap:8px;
+}
+.prompt-close-btn{
+  background:rgba(244,114,182,0.12);border:1px solid rgba(244,114,182,0.25);
+  color:#f9a8d4;width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.95rem;cursor:pointer;transition:all .2s;
+}
+.prompt-close-btn:hover{background:rgba(244,114,182,0.25);transform:rotate(90deg);color:#fff}
+.prompt-body{
+  padding:18px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:14px;
+}
+.prompt-bot-tabs{
+  display:flex;gap:8px;background:rgba(15,5,28,0.5);padding:4px;border-radius:14px;
+  border:1px solid rgba(244,114,182,0.15);
+}
+.prompt-bot-tab{
+  flex:1;padding:8px 10px;border-radius:10px;text-align:center;font-size:0.82rem;
+  font-weight:600;color:#c084a8;cursor:pointer;transition:all .2s;display:flex;
+  align-items:center;justify-content:center;gap:6px;border:none;background:transparent;
+}
+.prompt-bot-tab.active{
+  background:linear-gradient(135deg,rgba(236,72,153,0.35),rgba(168,85,247,0.35));
+  color:#fff;box-shadow:0 2px 10px rgba(236,72,153,0.3);border:1px solid rgba(244,114,182,0.4);
+}
+.prompt-ctx-box{display:flex;flex-direction:column;gap:6px}
+.prompt-ctx-label{font-size:0.75rem;color:#c084a8;display:flex;justify-content:space-between}
+.prompt-ctx-input{
+  background:rgba(15,5,28,0.6);border:1px solid rgba(244,114,182,0.2);
+  border-radius:12px;padding:9px 14px;color:#fce7f3;font-size:0.85rem;
+  font-family:inherit;outline:none;resize:none;min-height:50px;max-height:90px;
+}
+.prompt-ctx-input:focus{border-color:rgba(244,114,182,0.5)}
+.prompt-gen-btn{
+  background:linear-gradient(135deg,#ec4899 0%,#a855f7 50%,#6366f1 100%);
+  border:none;color:#fff;font-size:0.9rem;font-weight:700;
+  padding:11px 18px;border-radius:14px;cursor:pointer;
+  box-shadow:0 4px 18px rgba(236,72,153,0.4);transition:all .25s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.prompt-gen-btn:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(236,72,153,0.6)}
+.prompt-gen-btn:disabled{opacity:0.6;cursor:wait;transform:none}
+.prompt-result-section{display:flex;flex-direction:column;gap:12px}
+.prompt-card{
+  background:rgba(26,10,46,0.5);border:1px solid rgba(244,114,182,0.18);
+  border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+  position:relative;
+}
+.prompt-card-header{
+  display:flex;align-items:center;justify-content:space-between;
+}
+.prompt-card-title{font-size:0.8rem;font-weight:700;color:#f9a8d4;display:flex;align-items:center;gap:6px}
+.prompt-copy-btn{
+  background:rgba(244,114,182,0.15);border:1px solid rgba(244,114,182,0.3);
+  color:#fce7f3;font-size:0.72rem;padding:3px 10px;border-radius:8px;
+  cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:4px;
+}
+.prompt-copy-btn:hover{background:rgba(244,114,182,0.3);color:#fff;box-shadow:0 0 8px rgba(244,114,182,0.4)}
+.prompt-text-display{
+  font-size:0.8rem;line-height:1.55;color:#e9d5ff;word-break:break-word;
+  background:rgba(10,4,20,0.45);padding:10px 12px;border-radius:10px;
+  border:1px solid rgba(244,114,182,0.1);max-height:130px;overflow-y:auto;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+}
+.prompt-summary-display{
+  font-size:0.83rem;line-height:1.6;color:#fdf2f8;background:rgba(236,72,153,0.08);
+  border:1px solid rgba(236,72,153,0.25);border-radius:10px;padding:10px 12px;
+}
+.prompt-params-bar{
+  display:flex;flex-wrap:wrap;gap:6px;background:rgba(15,5,28,0.4);
+  padding:8px 12px;border-radius:10px;border:1px solid rgba(244,114,182,0.12);
+}
+.param-tag{font-size:0.7rem;color:#c084fc;background:rgba(192,132,252,0.12);padding:2px 8px;border-radius:6px}
+.prompt-footer{
+  padding:12px 20px;background:rgba(26,10,46,0.65);
+  border-top:1px solid rgba(244,114,182,0.18);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.prompt-goto-btn{
+  background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff;
+  border:none;font-size:0.8rem;font-weight:600;padding:8px 14px;
+  border-radius:10px;cursor:pointer;text-decoration:none;display:inline-flex;
+  align-items:center;gap:6px;transition:all .2s;
+}
+.prompt-goto-btn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(59,130,246,0.4)}
+.chat-prompt-header-btn{
+  background:linear-gradient(135deg,rgba(236,72,153,0.35),rgba(168,85,247,0.35));
+  border:1px solid rgba(244,114,182,0.45);color:#fce7f3;font-size:0.75rem;
+  font-weight:600;padding:5px 12px;border-radius:14px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:5px;transition:all .2s;
+  box-shadow:0 2px 8px rgba(236,72,153,0.25);margin-left:auto;
+}
+.chat-prompt-header-btn:hover{
+  background:linear-gradient(135deg,rgba(236,72,153,0.55),rgba(168,85,247,0.55));
+  transform:translateY(-1px);box-shadow:0 4px 12px rgba(236,72,153,0.45);
+}
+.msg-prompt-btn{
+  background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.3);color:#d8b4fe;
+  font-size:0.68rem;border-radius:12px;padding:3px 8px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:4px;transition:all .2s;
+}
+.msg-prompt-btn:hover{background:rgba(168,85,247,.25);color:#fff;border-color:rgba(168,85,247,.5)}
+.main-btn-prompt{
+  background:linear-gradient(135deg,#ec4899,#8b5cf6);color:#fff;
+  border:none;box-shadow:0 4px 12px rgba(236,72,153,.35);
+  font-size:0.8rem;padding:6px 12px;border-radius:10px;cursor:pointer;
+  font-weight:600;display:inline-flex;align-items:center;gap:4px;transition:all .2s;
+  margin-left:6px;
+}
+.main-btn-prompt:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(236,72,153,.5)}
+
 </style>
 </head>
 <body>
@@ -1770,6 +2074,7 @@ body{
     <div class="chat-header-name" id="hdr-name">…</div>
     <div class="chat-header-status"><span class="status-dot" id="hdr-dot"></span><span id="hdr-status">连接中...</span></div>
   </div>
+  <button class="chat-prompt-header-btn" onclick="openPromptModal(currentBot)">🎨 场景生图 Prompt</button>
   <div class="bot-tabs" id="bot-tabs"></div>
 </div>
 <div class="messages" id="messages">
@@ -1854,6 +2159,7 @@ function appendMsg(msg){
   html+="<div class='msg-meta'><span>"+esc(msg.timestamp||"")+"</span>";
   if(msg.role==="assistant"){
     html+='<button class="msg-play-btn" id="btn-'+msgId+'" onclick="togglePlay(&#39;'+msgId+'&#39;)">▶ 播放</button>';
+    html+='<button class="msg-prompt-btn" onclick="openPromptModal('+currentBot+', this.closest(&#39;.msg-body&#39;).querySelector(&#39;.msg-bubble&#39;).textContent)">🎨 生图</button>';
   }
   html+="</div></div>";
   div.innerHTML=html;
@@ -1977,6 +2283,203 @@ document.getElementById("messages").addEventListener("scroll",function(){
 });
 </script>
 <div style="text-align:center;padding:6px 0 12px;font-size:0.7rem;color:#a78ba0;opacity:0.7"><a href="https://github.com/KroMiose/nekro-agent" target="_blank" rel="noopener" style="color:inherit">基于 NekroAgent 构建</a></div>
+
+<div class="prompt-modal-overlay" id="prompt-modal" onclick="if(event.target===this)closePromptModal()">
+  <div class="prompt-modal">
+    <div class="prompt-header">
+      <div class="prompt-header-title">
+        <span>🎨</span>
+        <span id="pm-modal-title">AI 场景生图 Prompt 提炼</span>
+      </div>
+      <button class="prompt-close-btn" onclick="closePromptModal()">✕</button>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-bot-tabs" id="pm-bot-tabs">
+        <button class="prompt-bot-tab active" onclick="switchPromptBot(1)">🌸 雾岛澪</button>
+        <button class="prompt-bot-tab" onclick="switchPromptBot(2)">🌙 霁月</button>
+        <button class="prompt-bot-tab" onclick="switchPromptBot(3)">✨ 爱弥斯</button>
+      </div>
+      <div class="prompt-ctx-box">
+        <div class="prompt-ctx-label">
+          <span>场景/聊天上下文（留空则自动提取最新聊天对话）</span>
+          <span style="cursor:pointer;color:#f472b6" onclick="document.getElementById('pm-ctx-input').value='';">清空</span>
+        </div>
+        <textarea class="prompt-ctx-input" id="pm-ctx-input" placeholder="输入自定义场景描述或关键词...留空则自动读取最新聊天上下文"></textarea>
+      </div>
+      <button class="prompt-gen-btn" id="pm-gen-btn" onclick="executeGeneratePrompt()">
+        <span>✨</span><span id="pm-gen-btn-text">提炼场景生图 Prompt</span>
+      </button>
+      <div class="prompt-result-section" id="pm-result-box" style="display:none">
+        <div class="prompt-card">
+          <div class="prompt-card-header">
+            <span class="prompt-card-title">📝 画面场景小传</span>
+            <span id="pm-char-tag" style="font-size:0.7rem;color:#f472b6;background:rgba(244,114,182,0.15);padding:2px 8px;border-radius:6px"></span>
+          </div>
+          <div class="prompt-summary-display" id="pm-summary-text">...</div>
+        </div>
+        <div class="prompt-card">
+          <div class="prompt-card-header">
+            <span class="prompt-card-title">✨ 正向生图提示词 (Positive Prompt)</span>
+            <button class="prompt-copy-btn" onclick="copyPromptText('pm-pos-text', this)">📋 复制正向</button>
+          </div>
+          <div class="prompt-text-display" id="pm-pos-text">...</div>
+        </div>
+        <div class="prompt-card">
+          <div class="prompt-card-header">
+            <span class="prompt-card-title">🚫 负向提示词 (Negative Prompt)</span>
+            <button class="prompt-copy-btn" onclick="copyPromptText('pm-neg-text', this)">📋 复制负向</button>
+          </div>
+          <div class="prompt-text-display" id="pm-neg-text">...</div>
+        </div>
+        <div class="prompt-params-bar">
+          <span class="param-tag">模型: NovelAI Diffusion V3</span>
+          <span class="param-tag">分辨率: 832×1216</span>
+          <span class="param-tag">采样步数: 28</span>
+          <span class="param-tag">CFG: 5.5</span>
+          <span class="param-tag">采样器: Euler Ancestral</span>
+        </div>
+      </div>
+    </div>
+    <div class="prompt-footer">
+      <a href="https://nai.sta1n.cn/" target="_blank" rel="noopener" class="prompt-goto-btn">
+        <span>🚀</span><span>前往 Nai2API 图像工作台</span>
+      </a>
+      <div style="display:flex;gap:8px">
+        <button class="prompt-copy-btn" style="padding:7px 12px;font-size:0.78rem;border-radius:10px" onclick="copyAllPrompts(this)">📋 复制全部 Prompt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+var currentPromptBot = 1;
+var lastPromptData = null;
+
+function openPromptModal(botIndex, prefilledContext) {
+  if (botIndex) currentPromptBot = parseInt(botIndex) || 1;
+  var modal = document.getElementById("prompt-modal");
+  if (!modal) return;
+  modal.classList.add("active");
+  var tabs = document.querySelectorAll(".prompt-bot-tab");
+  tabs.forEach(function(t, i) {
+    t.classList.toggle("active", (i + 1) === currentPromptBot);
+  });
+  var ctxInput = document.getElementById("pm-ctx-input");
+  if (ctxInput) {
+    ctxInput.value = prefilledContext || "";
+  }
+  executeGeneratePrompt();
+}
+
+function closePromptModal() {
+  var modal = document.getElementById("prompt-modal");
+  if (modal) modal.classList.remove("active");
+}
+
+function switchPromptBot(botIndex) {
+  currentPromptBot = botIndex;
+  var tabs = document.querySelectorAll(".prompt-bot-tab");
+  tabs.forEach(function(t, i) {
+    t.classList.toggle("active", (i + 1) === currentPromptBot);
+  });
+  executeGeneratePrompt();
+}
+
+function executeGeneratePrompt() {
+  var btn = document.getElementById("pm-gen-btn");
+  var btnText = document.getElementById("pm-gen-btn-text");
+  var ctxInput = document.getElementById("pm-ctx-input");
+  var customCtx = ctxInput ? ctxInput.value.trim() : "";
+  
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.textContent = "正在提炼场景与生成 Prompt...";
+  
+  fetch("/api/generate-prompt", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      bot: currentPromptBot,
+      context: customCtx,
+      style: "novelai"
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.textContent = "✨ 重新提炼 / 生成 Prompt";
+    if (d && d.ok) {
+      lastPromptData = d;
+      renderPromptResult(d);
+    } else {
+      showToast("生成失败: " + (d ? d.msg : "网络异常"), "error");
+    }
+  })
+  .catch(function(err) {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.textContent = "✨ 重新提炼 / 生成 Prompt";
+    showToast("请求失败: " + err.message, "error");
+  });
+}
+
+function renderPromptResult(data) {
+  var resultBox = document.getElementById("pm-result-box");
+  if (!resultBox) return;
+  resultBox.style.display = "flex";
+  
+  var charTag = document.getElementById("pm-char-tag");
+  if (charTag) charTag.textContent = (data.character_name || "") + " · " + (data.role || "");
+  
+  var summary = document.getElementById("pm-summary-text");
+  if (summary) summary.textContent = data.scene_summary || "暂无场景描述";
+  
+  var posText = document.getElementById("pm-pos-text");
+  if (posText) posText.textContent = data.positive_prompt || "";
+  
+  var negText = document.getElementById("pm-neg-text");
+  if (negText) negText.textContent = data.negative_prompt || "";
+}
+
+function copyPromptText(elementId, btn) {
+  var el = document.getElementById(elementId);
+  if (!el) return;
+  var text = el.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      showToast("已复制到剪贴板 ✓");
+      if (btn) {
+        var old = btn.textContent;
+        btn.textContent = "已复制 ✓";
+        setTimeout(function() { btn.textContent = old; }, 1200);
+      }
+    });
+  } else {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch(e) {}
+    document.body.removeChild(ta);
+    showToast("已复制到剪贴板 ✓");
+  }
+}
+
+function copyAllPrompts(btn) {
+  if (!lastPromptData) return;
+  var allText = "### Positive Prompt:\n" + (lastPromptData.positive_prompt || "") + "\n\n### Negative Prompt:\n" + (lastPromptData.negative_prompt || "");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(allText).then(function() {
+      showToast("Prompt 已全部复制 ✓");
+      if (btn) {
+        var old = btn.textContent;
+        btn.textContent = "全部已复制 ✓";
+        setTimeout(function() { btn.textContent = old; }, 1200);
+      }
+    });
+  }
+}
+
+</script>
 </body>
 </html>
 '''
@@ -2271,6 +2774,148 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
 .addg-btns .model-btn{flex:1}
 /* ===== 添加模型组模态框 end ===== */
 /* ===== 模型卡片美化 end ===== */
+
+/* ===== Prompt Modal ===== */
+.prompt-modal-overlay{
+  position:fixed;inset:0;z-index:99999;
+  background:rgba(10,4,20,0.78);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:all .3s ease;
+  padding:16px;box-sizing:border-box;
+}
+.prompt-modal-overlay.active{opacity:1;pointer-events:auto}
+.prompt-modal{
+  background:linear-gradient(160deg,#1f0c35 0%,#281042 50%,#1a082b 100%);
+  border:1px solid rgba(244,114,182,0.35);
+  box-shadow:0 20px 60px rgba(0,0,0,0.6),0 0 30px rgba(236,72,153,0.25);
+  border-radius:24px;width:100%;max-width:680px;max-height:90vh;
+  display:flex;flex-direction:column;overflow:hidden;
+  transform:scale(0.92) translateY(20px);transition:all .3s cubic-bezier(0.34,1.56,0.64,1);
+  box-sizing:border-box;
+}
+.prompt-modal-overlay.active .prompt-modal{transform:scale(1) translateY(0)}
+.prompt-header{
+  padding:16px 20px;
+  background:rgba(26,10,46,0.65);
+  border-bottom:1px solid rgba(244,114,182,0.18);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.prompt-header-title{
+  font-size:1.1rem;font-weight:700;
+  background:linear-gradient(90deg,#f472b6,#c084fc,#38bdf8);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  display:flex;align-items:center;gap:8px;
+}
+.prompt-close-btn{
+  background:rgba(244,114,182,0.12);border:1px solid rgba(244,114,182,0.25);
+  color:#f9a8d4;width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.95rem;cursor:pointer;transition:all .2s;
+}
+.prompt-close-btn:hover{background:rgba(244,114,182,0.25);transform:rotate(90deg);color:#fff}
+.prompt-body{
+  padding:18px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:14px;
+}
+.prompt-bot-tabs{
+  display:flex;gap:8px;background:rgba(15,5,28,0.5);padding:4px;border-radius:14px;
+  border:1px solid rgba(244,114,182,0.15);
+}
+.prompt-bot-tab{
+  flex:1;padding:8px 10px;border-radius:10px;text-align:center;font-size:0.82rem;
+  font-weight:600;color:#c084a8;cursor:pointer;transition:all .2s;display:flex;
+  align-items:center;justify-content:center;gap:6px;border:none;background:transparent;
+}
+.prompt-bot-tab.active{
+  background:linear-gradient(135deg,rgba(236,72,153,0.35),rgba(168,85,247,0.35));
+  color:#fff;box-shadow:0 2px 10px rgba(236,72,153,0.3);border:1px solid rgba(244,114,182,0.4);
+}
+.prompt-ctx-box{display:flex;flex-direction:column;gap:6px}
+.prompt-ctx-label{font-size:0.75rem;color:#c084a8;display:flex;justify-content:space-between}
+.prompt-ctx-input{
+  background:rgba(15,5,28,0.6);border:1px solid rgba(244,114,182,0.2);
+  border-radius:12px;padding:9px 14px;color:#fce7f3;font-size:0.85rem;
+  font-family:inherit;outline:none;resize:none;min-height:50px;max-height:90px;
+}
+.prompt-ctx-input:focus{border-color:rgba(244,114,182,0.5)}
+.prompt-gen-btn{
+  background:linear-gradient(135deg,#ec4899 0%,#a855f7 50%,#6366f1 100%);
+  border:none;color:#fff;font-size:0.9rem;font-weight:700;
+  padding:11px 18px;border-radius:14px;cursor:pointer;
+  box-shadow:0 4px 18px rgba(236,72,153,0.4);transition:all .25s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.prompt-gen-btn:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(236,72,153,0.6)}
+.prompt-gen-btn:disabled{opacity:0.6;cursor:wait;transform:none}
+.prompt-result-section{display:flex;flex-direction:column;gap:12px}
+.prompt-card{
+  background:rgba(26,10,46,0.5);border:1px solid rgba(244,114,182,0.18);
+  border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+  position:relative;
+}
+.prompt-card-header{
+  display:flex;align-items:center;justify-content:space-between;
+}
+.prompt-card-title{font-size:0.8rem;font-weight:700;color:#f9a8d4;display:flex;align-items:center;gap:6px}
+.prompt-copy-btn{
+  background:rgba(244,114,182,0.15);border:1px solid rgba(244,114,182,0.3);
+  color:#fce7f3;font-size:0.72rem;padding:3px 10px;border-radius:8px;
+  cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:4px;
+}
+.prompt-copy-btn:hover{background:rgba(244,114,182,0.3);color:#fff;box-shadow:0 0 8px rgba(244,114,182,0.4)}
+.prompt-text-display{
+  font-size:0.8rem;line-height:1.55;color:#e9d5ff;word-break:break-word;
+  background:rgba(10,4,20,0.45);padding:10px 12px;border-radius:10px;
+  border:1px solid rgba(244,114,182,0.1);max-height:130px;overflow-y:auto;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+}
+.prompt-summary-display{
+  font-size:0.83rem;line-height:1.6;color:#fdf2f8;background:rgba(236,72,153,0.08);
+  border:1px solid rgba(236,72,153,0.25);border-radius:10px;padding:10px 12px;
+}
+.prompt-params-bar{
+  display:flex;flex-wrap:wrap;gap:6px;background:rgba(15,5,28,0.4);
+  padding:8px 12px;border-radius:10px;border:1px solid rgba(244,114,182,0.12);
+}
+.param-tag{font-size:0.7rem;color:#c084fc;background:rgba(192,132,252,0.12);padding:2px 8px;border-radius:6px}
+.prompt-footer{
+  padding:12px 20px;background:rgba(26,10,46,0.65);
+  border-top:1px solid rgba(244,114,182,0.18);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.prompt-goto-btn{
+  background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff;
+  border:none;font-size:0.8rem;font-weight:600;padding:8px 14px;
+  border-radius:10px;cursor:pointer;text-decoration:none;display:inline-flex;
+  align-items:center;gap:6px;transition:all .2s;
+}
+.prompt-goto-btn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(59,130,246,0.4)}
+.chat-prompt-header-btn{
+  background:linear-gradient(135deg,rgba(236,72,153,0.35),rgba(168,85,247,0.35));
+  border:1px solid rgba(244,114,182,0.45);color:#fce7f3;font-size:0.75rem;
+  font-weight:600;padding:5px 12px;border-radius:14px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:5px;transition:all .2s;
+  box-shadow:0 2px 8px rgba(236,72,153,0.25);margin-left:auto;
+}
+.chat-prompt-header-btn:hover{
+  background:linear-gradient(135deg,rgba(236,72,153,0.55),rgba(168,85,247,0.55));
+  transform:translateY(-1px);box-shadow:0 4px 12px rgba(236,72,153,0.45);
+}
+.msg-prompt-btn{
+  background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.3);color:#d8b4fe;
+  font-size:0.68rem;border-radius:12px;padding:3px 8px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:4px;transition:all .2s;
+}
+.msg-prompt-btn:hover{background:rgba(168,85,247,.25);color:#fff;border-color:rgba(168,85,247,.5)}
+.main-btn-prompt{
+  background:linear-gradient(135deg,#ec4899,#8b5cf6);color:#fff;
+  border:none;box-shadow:0 4px 12px rgba(236,72,153,.35);
+  font-size:0.8rem;padding:6px 12px;border-radius:10px;cursor:pointer;
+  font-weight:600;display:inline-flex;align-items:center;gap:4px;transition:all .2s;
+  margin-left:6px;
+}
+.main-btn-prompt:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(236,72,153,.5)}
+
 </style>
 </head>
 <body>
@@ -2342,7 +2987,7 @@ function initSections(){var sections=["sec-sys","sec-model","sec-bots","sec-nav"
 function setSummary(id,text){var el=document.getElementById(id);if(el)el.textContent=text}
 function setSectionHealth(id,healthy){var el=document.getElementById(id);if(!el)return;el.classList.remove("healthy","warning");el.classList.add(healthy?"healthy":"warning")}
 function renderSystem(sys){var memPct=parseFloat(sys.mem_pct);var memClass=isNaN(memPct)?"":(memPct<50?"":memPct<80?"warn":"danger");document.getElementById("sys-bar").innerHTML='<div class="sys-item"><div class="sys-label">服务器时间</div><div class="sys-value">'+esc(sys.time)+'</div></div><div class="sys-item"><div class="sys-label">CPU</div><div class="sys-value">'+esc(sys.cpu)+'</div></div><div class="sys-item"><div class="sys-label">内存</div><div class="sys-value '+memClass+'">'+esc(sys.mem)+' ('+esc(sys.mem_pct)+')</div></div><div class="sys-item"><div class="sys-label">磁盘</div><div class="sys-value">'+esc(sys.disk)+'</div></div>'}
-function renderBot(bot,index){var statusClass=bot.online===true?"online":bot.online===false?"offline":"unknown";var statusBadge=bot.online===true?"status-online":bot.online===false?"status-offline":"status-unknown";var napcatMemPct=(bot.napcat_stats.mem_pct||"").replace("%","").trim();var nekroMemPct=(bot.nekro_stats.mem_pct||"").replace("%","").trim();var connClass=bot.nekro_conn==="已连接"?"green":bot.nekro_conn==="已断开"?"red":"yellow";var napcatC=esc(bot.napcat_container);var nekroC=esc(bot.nekro_container);var html="";var avatarUrl=avUrl(esc(bot.qq),640);html+='<div class="bot-card '+statusClass+'">';html+='<div class="card-header"><div class="card-header-left"><img class="bot-avatar" src="'+avatarUrl+'" onerror="this.style.display=\'none\'"><div><span class="bot-name">'+esc(bot.preset_name||bot.role)+'</span><span class="status-badge '+statusBadge+'">'+esc(bot.online_msg)+'</span></div></div><div class="card-header-right"><a href="/chat?bot='+(index+1)+'" target="_blank" class="main-btn main-btn-chat">💬 聊天</a></div></div>';html+='<div class="bot-sub open" id="bs-mon-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-mon-'+index+'\')"><span>监控</span><span class="bot-sub-arrow">▾</span></div><div class="bot-sub-b">';html+='<div class="info-section"><div class="section-title">NapCat</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.napcat_running?"green":"red")+'">'+(bot.napcat_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.napcat_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(napcatMemPct)+'">'+esc(bot.napcat_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(napcatMemPct)+'" style="width:'+(napcatMemPct||0)+'%"></div></div></div>';html+='<div class="info-section"><div class="section-title">NekroAgent</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.nekro_running?"green":"red")+'">'+(bot.nekro_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">OneBot</span><span class="value '+connClass+'">'+esc(bot.nekro_conn)+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.nekro_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(nekroMemPct)+'">'+esc(bot.nekro_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(nekroMemPct)+'" style="width:'+(nekroMemPct||0)+'%"></div></div></div>';var kickOn=bot.kick_restart!==false;html+='<div class="guard-toggle"><span class="guard-label">踢下线自动重启NapCat</span><div class="guard-switch'+(kickOn?" on":"")+'" onclick="toggleKickRestart('+index+',this)"></div></div>';var voiceOn=voiceSwitchStates[index]!==false;html+='<div class="guard-toggle"><span class="guard-label">QQ 语音回复</span><div class="guard-switch'+(voiceOn?" on":"")+'" id="voice-switch-'+index+'" onclick="toggleVoiceSwitch('+index+',this)"></div></div>';html+='<div style="margin-top:6px"><a href="'+esc(bot.napcat_url)+'" target="_blank" class="main-btn main-btn-napcat">NapCat</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+napcatC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+napcatC+'\',\'restart\')">重启</button>';if(bot.napcat_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+napcatC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+napcatC+'\',\'start\')">启动</button>';html+='</div></div>';html+='<div style="margin-top:6px"><a href="javascript:void(0)" onclick="openNekro('+index+')" class="main-btn main-btn-nekro">NekroAgent</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+nekroC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+nekroC+'\',\'restart\')">重启</button>';if(bot.nekro_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+nekroC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+nekroC+'\',\'start\')">启动</button>';html+='</div></div>';html+='</div></div>';html+='<div class="bot-sub" id="bs-br-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-br-'+index+'\')"><span>桥接</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-br-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-tts-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-tts-'+index+'\')"><span>音色</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-tts-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-note-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-note-'+index+'\')"><span>笔记</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-note-b-'+index+'"></div></div>';if(index===DEVICE_BOT_INDEX){html+='<div class="bot-sub" id="bs-dev-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-dev-'+index+'\')"><span>设备</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-dev-b-'+index+'"></div></div>'}html+='</div>';return html}
+function renderBot(bot,index){var statusClass=bot.online===true?"online":bot.online===false?"offline":"unknown";var statusBadge=bot.online===true?"status-online":bot.online===false?"status-offline":"status-unknown";var napcatMemPct=(bot.napcat_stats.mem_pct||"").replace("%","").trim();var nekroMemPct=(bot.nekro_stats.mem_pct||"").replace("%","").trim();var connClass=bot.nekro_conn==="已连接"?"green":bot.nekro_conn==="已断开"?"red":"yellow";var napcatC=esc(bot.napcat_container);var nekroC=esc(bot.nekro_container);var html="";var avatarUrl=avUrl(esc(bot.qq),640);html+='<div class="bot-card '+statusClass+'">';html+='<div class="card-header"><div class="card-header-left"><img class="bot-avatar" src="'+avatarUrl+'" onerror="this.style.display=\'none\'"><div><span class="bot-name">'+esc(bot.preset_name||bot.role)+'</span><span class="status-badge '+statusBadge+'">'+esc(bot.online_msg)+'</span></div></div><div class="card-header-right"><a href="/chat?bot='+(index+1)+'" target="_blank" class="main-btn main-btn-chat">💬 聊天</a><button onclick="openPromptModal('+(index+1)+')" class="main-btn main-btn-prompt">🎨 生图Prompt</button></div></div>';html+='<div class="bot-sub open" id="bs-mon-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-mon-'+index+'\')"><span>监控</span><span class="bot-sub-arrow">▾</span></div><div class="bot-sub-b">';html+='<div class="info-section"><div class="section-title">NapCat</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.napcat_running?"green":"red")+'">'+(bot.napcat_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.napcat_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(napcatMemPct)+'">'+esc(bot.napcat_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(napcatMemPct)+'" style="width:'+(napcatMemPct||0)+'%"></div></div></div>';html+='<div class="info-section"><div class="section-title">NekroAgent</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.nekro_running?"green":"red")+'">'+(bot.nekro_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">OneBot</span><span class="value '+connClass+'">'+esc(bot.nekro_conn)+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.nekro_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(nekroMemPct)+'">'+esc(bot.nekro_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(nekroMemPct)+'" style="width:'+(nekroMemPct||0)+'%"></div></div></div>';var kickOn=bot.kick_restart!==false;html+='<div class="guard-toggle"><span class="guard-label">踢下线自动重启NapCat</span><div class="guard-switch'+(kickOn?" on":"")+'" onclick="toggleKickRestart('+index+',this)"></div></div>';var voiceOn=voiceSwitchStates[index]!==false;html+='<div class="guard-toggle"><span class="guard-label">QQ 语音回复</span><div class="guard-switch'+(voiceOn?" on":"")+'" id="voice-switch-'+index+'" onclick="toggleVoiceSwitch('+index+',this)"></div></div>';html+='<div style="margin-top:6px"><a href="'+esc(bot.napcat_url)+'" target="_blank" class="main-btn main-btn-napcat">NapCat</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+napcatC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+napcatC+'\',\'restart\')">重启</button>';if(bot.napcat_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+napcatC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+napcatC+'\',\'start\')">启动</button>';html+='</div></div>';html+='<div style="margin-top:6px"><a href="javascript:void(0)" onclick="openNekro('+index+')" class="main-btn main-btn-nekro">NekroAgent</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+nekroC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+nekroC+'\',\'restart\')">重启</button>';if(bot.nekro_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+nekroC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+nekroC+'\',\'start\')">启动</button>';html+='</div></div>';html+='</div></div>';html+='<div class="bot-sub" id="bs-br-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-br-'+index+'\')"><span>桥接</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-br-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-tts-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-tts-'+index+'\')"><span>音色</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-tts-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-note-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-note-'+index+'\')"><span>笔记</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-note-b-'+index+'"></div></div>';if(index===DEVICE_BOT_INDEX){html+='<div class="bot-sub" id="bs-dev-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-dev-'+index+'\')"><span>设备</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-dev-b-'+index+'"></div></div>'}html+='</div>';return html}
 
 function loadModelGroups(){fetch("/api/model-presets").then(function(r){return r.json()}).then(function(d){modelGroups=d.groups||[];currentModel=d.current||"unknown";selectedModel=currentModel;_renderModelCard()}).catch(function(){})}function _renderModelCard(){var el=document.getElementById("model-section");if(!el)return;var cur=null;(modelGroups||[]).forEach(function(g){if(g.group_name===currentModel)cur=g});var curPretty=cur?cur.pretty:currentModel;setSummary("summary-model",curPretty);if(!modelGroups.length){el.innerHTML='<div class="model-card"><div class="model-head"><span class="label">当前模型组</span><span class="model-badge">未配置</span></div><div class="model-row"><div class="model-row-label">暂无可用模型组，请先添加</div></div><div class="model-btns"><button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加模型组</button></div></div>';return}var opts=(modelGroups||[]).map(function(g){var sel=(g.group_name===(selectedModel||currentModel))?" selected":"";return '<option value="'+esc(g.group_name)+'"'+sel+'>'+esc(g.pretty||g.group_name)+'</option>'}).join("");var pending=selectedModel&&selectedModel!==currentModel;var _pm=null;(modelGroups||[]).forEach(function(g){if(g.group_name===selectedModel)_pm=g});var applyBtnLabel=pending?("⚡ 应用："+esc(currentModel)+" → "+esc(selectedModel)):"⚡ 应用所选";var curChip=cur?('<div class="model-meta-chip">模型 <b>'+esc(cur.chat_model||"-")+'</b></div><div class="model-meta-chip" title="'+esc(cur.base_url||"")+'">接口 '+(cur.base_url?esc(cur.base_url.replace(/^https?:\/\//,"").replace(/\/+$/,"")):"-")+'</div>'):'';el.innerHTML='<div class="model-card"><div class="model-head"><span class="label">当前模型组</span><span class="model-badge">'+esc(curPretty)+'</span></div>'+(cur?(''):'')+'<div class="model-row"><div class="model-row-label">切换模型组</div><select class="model-select" id="model-select" onchange="selectModel(this.value)">'+opts+'</select></div>'+(curChip?'<div class="model-meta">'+curChip+'</div>':'')+'<div class="model-btns" style="margin-top:10px"><button class="model-btn model-btn-switch" id="model-apply-btn" onclick="applySelectedModel()"'+(pending?"":" disabled")+'>'+applyBtnLabel+'</button><button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加组</button><button class="model-btn model-btn-del" onclick="deleteCurrentModelGroup()">－ 删除组</button></div></div>'}
 function render(data){if(data.error&&(!data.bots||data.bots.length===0)){showError(data.error);return}document.getElementById("pulse-dot").className="pulse";document.getElementById("last-update").textContent="更新于 "+(data.system?data.system.time:"?");if(data.error){document.getElementById("error-box").innerHTML='<div class="warn-msg">部分异常: '+esc(data.error)+'</div>'}else{document.getElementById("error-box").innerHTML=''}if(data.system){renderSystem(data.system);setSummary("summary-sys","CPU "+esc(data.system.cpu)+" | 内存 "+esc(data.system.mem));var sysMemPct=parseFloat(data.system.mem_pct);setSectionHealth("sec-sys",isNaN(sysMemPct)||sysMemPct<80)}if(data.bots&&data.bots.length>0){document.getElementById("bots-grid").innerHTML=data.bots.map(renderBot).join("");var onlineCount=data.bots.filter(function(b){return b.online===true}).length;setSummary("summary-bots",onlineCount+"/"+data.bots.length+" 在线");setSectionHealth("sec-bots",onlineCount===data.bots.length);data.bots.forEach(function(b,i){fillBotExtras(b,i,data.note_sync)})}else{document.getElementById("bots-grid").innerHTML='<div style="color:#c084a8;text-align:center;padding:40px">暂无数据</div>';setSummary("summary-bots","0/0 在线");setSectionHealth("sec-bots",false)}renderDevice(data.device);renderNavLinks(data.extra_nav);loadModelGroups();loadVoiceSwitch();setSectionHealth("sec-nav",true)}
@@ -2402,6 +3047,203 @@ loadTtsConfig();setInterval(loadTtsConfig,30000);
 
 // 旧聊天轮询逻辑已删除（2026-08-11）：新逻辑带 bot 参数在页面加载时启动
 function pad(n){return n<10?"0"+n:n}
+
+</script>
+
+<div class="prompt-modal-overlay" id="prompt-modal" onclick="if(event.target===this)closePromptModal()">
+  <div class="prompt-modal">
+    <div class="prompt-header">
+      <div class="prompt-header-title">
+        <span>🎨</span>
+        <span id="pm-modal-title">AI 场景生图 Prompt 提炼</span>
+      </div>
+      <button class="prompt-close-btn" onclick="closePromptModal()">✕</button>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-bot-tabs" id="pm-bot-tabs">
+        <button class="prompt-bot-tab active" onclick="switchPromptBot(1)">🌸 雾岛澪</button>
+        <button class="prompt-bot-tab" onclick="switchPromptBot(2)">🌙 霁月</button>
+        <button class="prompt-bot-tab" onclick="switchPromptBot(3)">✨ 爱弥斯</button>
+      </div>
+      <div class="prompt-ctx-box">
+        <div class="prompt-ctx-label">
+          <span>场景/聊天上下文（留空则自动提取最新聊天对话）</span>
+          <span style="cursor:pointer;color:#f472b6" onclick="document.getElementById('pm-ctx-input').value='';">清空</span>
+        </div>
+        <textarea class="prompt-ctx-input" id="pm-ctx-input" placeholder="输入自定义场景描述或关键词...留空则自动读取最新聊天上下文"></textarea>
+      </div>
+      <button class="prompt-gen-btn" id="pm-gen-btn" onclick="executeGeneratePrompt()">
+        <span>✨</span><span id="pm-gen-btn-text">提炼场景生图 Prompt</span>
+      </button>
+      <div class="prompt-result-section" id="pm-result-box" style="display:none">
+        <div class="prompt-card">
+          <div class="prompt-card-header">
+            <span class="prompt-card-title">📝 画面场景小传</span>
+            <span id="pm-char-tag" style="font-size:0.7rem;color:#f472b6;background:rgba(244,114,182,0.15);padding:2px 8px;border-radius:6px"></span>
+          </div>
+          <div class="prompt-summary-display" id="pm-summary-text">...</div>
+        </div>
+        <div class="prompt-card">
+          <div class="prompt-card-header">
+            <span class="prompt-card-title">✨ 正向生图提示词 (Positive Prompt)</span>
+            <button class="prompt-copy-btn" onclick="copyPromptText('pm-pos-text', this)">📋 复制正向</button>
+          </div>
+          <div class="prompt-text-display" id="pm-pos-text">...</div>
+        </div>
+        <div class="prompt-card">
+          <div class="prompt-card-header">
+            <span class="prompt-card-title">🚫 负向提示词 (Negative Prompt)</span>
+            <button class="prompt-copy-btn" onclick="copyPromptText('pm-neg-text', this)">📋 复制负向</button>
+          </div>
+          <div class="prompt-text-display" id="pm-neg-text">...</div>
+        </div>
+        <div class="prompt-params-bar">
+          <span class="param-tag">模型: NovelAI Diffusion V3</span>
+          <span class="param-tag">分辨率: 832×1216</span>
+          <span class="param-tag">采样步数: 28</span>
+          <span class="param-tag">CFG: 5.5</span>
+          <span class="param-tag">采样器: Euler Ancestral</span>
+        </div>
+      </div>
+    </div>
+    <div class="prompt-footer">
+      <a href="https://nai.sta1n.cn/" target="_blank" rel="noopener" class="prompt-goto-btn">
+        <span>🚀</span><span>前往 Nai2API 图像工作台</span>
+      </a>
+      <div style="display:flex;gap:8px">
+        <button class="prompt-copy-btn" style="padding:7px 12px;font-size:0.78rem;border-radius:10px" onclick="copyAllPrompts(this)">📋 复制全部 Prompt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+var currentPromptBot = 1;
+var lastPromptData = null;
+
+function openPromptModal(botIndex, prefilledContext) {
+  if (botIndex) currentPromptBot = parseInt(botIndex) || 1;
+  var modal = document.getElementById("prompt-modal");
+  if (!modal) return;
+  modal.classList.add("active");
+  var tabs = document.querySelectorAll(".prompt-bot-tab");
+  tabs.forEach(function(t, i) {
+    t.classList.toggle("active", (i + 1) === currentPromptBot);
+  });
+  var ctxInput = document.getElementById("pm-ctx-input");
+  if (ctxInput) {
+    ctxInput.value = prefilledContext || "";
+  }
+  executeGeneratePrompt();
+}
+
+function closePromptModal() {
+  var modal = document.getElementById("prompt-modal");
+  if (modal) modal.classList.remove("active");
+}
+
+function switchPromptBot(botIndex) {
+  currentPromptBot = botIndex;
+  var tabs = document.querySelectorAll(".prompt-bot-tab");
+  tabs.forEach(function(t, i) {
+    t.classList.toggle("active", (i + 1) === currentPromptBot);
+  });
+  executeGeneratePrompt();
+}
+
+function executeGeneratePrompt() {
+  var btn = document.getElementById("pm-gen-btn");
+  var btnText = document.getElementById("pm-gen-btn-text");
+  var ctxInput = document.getElementById("pm-ctx-input");
+  var customCtx = ctxInput ? ctxInput.value.trim() : "";
+  
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.textContent = "正在提炼场景与生成 Prompt...";
+  
+  fetch("/api/generate-prompt", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      bot: currentPromptBot,
+      context: customCtx,
+      style: "novelai"
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.textContent = "✨ 重新提炼 / 生成 Prompt";
+    if (d && d.ok) {
+      lastPromptData = d;
+      renderPromptResult(d);
+    } else {
+      showToast("生成失败: " + (d ? d.msg : "网络异常"), "error");
+    }
+  })
+  .catch(function(err) {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.textContent = "✨ 重新提炼 / 生成 Prompt";
+    showToast("请求失败: " + err.message, "error");
+  });
+}
+
+function renderPromptResult(data) {
+  var resultBox = document.getElementById("pm-result-box");
+  if (!resultBox) return;
+  resultBox.style.display = "flex";
+  
+  var charTag = document.getElementById("pm-char-tag");
+  if (charTag) charTag.textContent = (data.character_name || "") + " · " + (data.role || "");
+  
+  var summary = document.getElementById("pm-summary-text");
+  if (summary) summary.textContent = data.scene_summary || "暂无场景描述";
+  
+  var posText = document.getElementById("pm-pos-text");
+  if (posText) posText.textContent = data.positive_prompt || "";
+  
+  var negText = document.getElementById("pm-neg-text");
+  if (negText) negText.textContent = data.negative_prompt || "";
+}
+
+function copyPromptText(elementId, btn) {
+  var el = document.getElementById(elementId);
+  if (!el) return;
+  var text = el.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      showToast("已复制到剪贴板 ✓");
+      if (btn) {
+        var old = btn.textContent;
+        btn.textContent = "已复制 ✓";
+        setTimeout(function() { btn.textContent = old; }, 1200);
+      }
+    });
+  } else {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch(e) {}
+    document.body.removeChild(ta);
+    showToast("已复制到剪贴板 ✓");
+  }
+}
+
+function copyAllPrompts(btn) {
+  if (!lastPromptData) return;
+  var allText = "### Positive Prompt:\n" + (lastPromptData.positive_prompt || "") + "\n\n### Negative Prompt:\n" + (lastPromptData.negative_prompt || "");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(allText).then(function() {
+      showToast("Prompt 已全部复制 ✓");
+      if (btn) {
+        var old = btn.textContent;
+        btn.textContent = "全部已复制 ✓";
+        setTimeout(function() { btn.textContent = old; }, 1200);
+      }
+    });
+  }
+}
 
 </script>
 </body>
@@ -2707,6 +3549,19 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(data, ensure_ascii=False).encode())
             return
+        if self.path.startswith("/api/generate-prompt") or self.path.startswith("/api/chat/generate-prompt"):
+            qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+            from urllib.parse import parse_qs
+            params = parse_qs(qs)
+            bot = int(params.get("bot", [1])[0]) if params.get("bot") else 1
+            context = params.get("context", [""])[0] if params.get("context") else ""
+            style = params.get("style", ["novelai"])[0] if params.get("style") else "novelai"
+            res = generate_scene_prompt(bot, custom_context=context, style=style)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(res, ensure_ascii=False).encode())
+            return
         if self.path.startswith("/api/chat/history"):
             qs = self.path.split("?", 1)[1] if "?" in self.path else ""
             port = get_bridge_port_from_query(qs)
@@ -2961,6 +3816,22 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
+        elif self.path in ("/api/generate-prompt", "/api/chat/generate-prompt"):
+            try:
+                req = json.loads(body) if body else {}
+                bot = req.get("bot", 1)
+                context = req.get("context", "")
+                style = req.get("style", "novelai")
+                res = generate_scene_prompt(bot, custom_context=context, style=style)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode())
+            except Exception as e:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "msg": f"生成失败: {e}"}, ensure_ascii=False).encode())
         elif self.path == "/api/chat/send":
             try:
                 _port, _body = get_bridge_port_from_body(body)

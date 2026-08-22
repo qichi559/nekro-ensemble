@@ -1434,6 +1434,56 @@ def _get_llm_for_prompt():
         log(f"get_llm_for_prompt error: {e}")
     return None, None, None
 
+def get_recent_chat_history(bot_index, limit=8):
+    """获取指定 Bot 的最近聊天记录（优先从 PostgreSQL 数据库直读，确保包含 QQ 私聊/群聊与 WebUI 全量真实对话；失败则 fallback 到 Bridge）"""
+    try:
+        idx = int(bot_index)
+        if not (1 <= idx <= len(BOTS)):
+            idx = 1
+    except Exception:
+        idx = 1
+
+    # 1. 优先查 PostgreSQL chat_message 表
+    try:
+        pg = get_pg_container(idx)
+        if pg:
+            sql = f"SELECT sender_name, content_text FROM chat_message WHERE is_recalled = false AND sender_name != 'SYSTEM' AND content_text != '' ORDER BY id DESC LIMIT {limit * 3};"
+            cmd = f'docker exec {pg} psql -U nekro_agent -d nekro_agent -t -A -F "|||" -c "{sql}"'
+            res = run_cmd(cmd, timeout=5)
+            if res:
+                lines = []
+                emo_re = re.compile(r'\[\[emotion:[^\]\[]*\]\]|\[\[emotion:[^\n\]\[]*')
+                for raw in reversed(res.strip().split('\n')):
+                    if not raw or "|||" not in raw:
+                        continue
+                    parts = raw.split("|||", 1)
+                    if len(parts) != 2:
+                        continue
+                    sender, content = parts[0].strip(), parts[1].strip()
+                    content = emo_re.sub('', content).strip()
+                    if content.startswith(('[记忆]', 'set_note', '```', 'True', 'False', '{', '[')):
+                        continue
+                    if content:
+                        lines.append(f"{sender}: {content}")
+                if lines:
+                    return "\n".join(lines[-limit:])
+    except Exception as e:
+        log(f"get_recent_chat_history from pg failed: {e}")
+
+    # 2. Fallback: 查 Bridge 内存/jsonl 聊天历史
+    port = get_bridge_port(idx)
+    try:
+        st, content = proxy_to_bridge("GET", "/api/chat-history", port=port)
+        if st == 200:
+            data = json.loads(content.decode("utf-8"))
+            msgs = data.get("data", [])[-limit:]
+            chat_lines = [f"{m.get('role')}: {m.get('text')}" for m in msgs if m.get("text")]
+            return "\n".join(chat_lines)
+    except Exception as e:
+        log(f"get_recent_chat_history from bridge failed: {e}")
+
+    return ""
+
 def generate_scene_prompt(bot_index, custom_context="", style="novelai"):
     """根据聊天上下文与人设外貌生成生图 Prompt"""
     try:
@@ -1448,16 +1498,7 @@ def generate_scene_prompt(bot_index, custom_context="", style="novelai"):
 
     chat_text = ""
     if not custom_context:
-        port = get_bridge_port(idx)
-        try:
-            st, content = proxy_to_bridge("GET", "/api/chat-history", port=port)
-            if st == 200:
-                data = json.loads(content.decode("utf-8"))
-                msgs = data.get("data", [])[-8:]
-                chat_lines = [f"{m.get('role')}: {m.get('text')}" for m in msgs if m.get("text")]
-                chat_text = "\n".join(chat_lines)
-        except Exception as e:
-            log(f"fetch chat history for prompt error: {e}")
+        chat_text = get_recent_chat_history(idx, limit=8)
     else:
         chat_text = custom_context.strip()
 
@@ -1512,6 +1553,7 @@ Output strictly valid JSON:
                     "ok": True,
                     "character_name": parsed.get("character_name", preset_name),
                     "role": benchmark["role"],
+                    "used_context": chat_text,
                     "scene_summary": parsed.get("scene_summary", benchmark["fallback_summary"]),
                     "positive_prompt": parsed.get("positive_prompt", benchmark["fallback_positive"]),
                     "negative_prompt": parsed.get("negative_prompt", "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured"),
@@ -1532,6 +1574,7 @@ Output strictly valid JSON:
         "ok": True,
         "character_name": preset_name,
         "role": benchmark["role"],
+        "used_context": chat_text,
         "scene_summary": benchmark["fallback_summary"],
         "positive_prompt": benchmark["fallback_positive"],
         "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured",
@@ -2310,6 +2353,12 @@ document.getElementById("messages").addEventListener("scroll",function(){
         <span>✨</span><span id="pm-gen-btn-text">提炼场景生图 Prompt</span>
       </button>
       <div class="prompt-result-section" id="pm-result-box" style="display:none">
+        <div class="prompt-card" id="pm-context-card" style="display:none">
+          <div class="prompt-card-header">
+            <span class="prompt-card-title">💬 提取到的真实聊天记录</span>
+          </div>
+          <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
+        </div>
         <div class="prompt-card">
           <div class="prompt-card-header">
             <span class="prompt-card-title">📝 画面场景小传</span>
@@ -2426,6 +2475,17 @@ function renderPromptResult(data) {
   var resultBox = document.getElementById("pm-result-box");
   if (!resultBox) return;
   resultBox.style.display = "flex";
+  
+  var ctxCard = document.getElementById("pm-context-card");
+  var ctxText = document.getElementById("pm-context-text");
+  if (ctxCard && ctxText) {
+    if (data.used_context && data.used_context.trim()) {
+      ctxCard.style.display = "block";
+      ctxText.textContent = data.used_context.trim();
+    } else {
+      ctxCard.style.display = "none";
+    }
+  }
   
   var charTag = document.getElementById("pm-char-tag");
   if (charTag) charTag.textContent = (data.character_name || "") + " · " + (data.role || "");
@@ -3076,6 +3136,12 @@ function pad(n){return n<10?"0"+n:n}
         <span>✨</span><span id="pm-gen-btn-text">提炼场景生图 Prompt</span>
       </button>
       <div class="prompt-result-section" id="pm-result-box" style="display:none">
+        <div class="prompt-card" id="pm-context-card" style="display:none">
+          <div class="prompt-card-header">
+            <span class="prompt-card-title">💬 提取到的真实聊天记录</span>
+          </div>
+          <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
+        </div>
         <div class="prompt-card">
           <div class="prompt-card-header">
             <span class="prompt-card-title">📝 画面场景小传</span>
@@ -3192,6 +3258,17 @@ function renderPromptResult(data) {
   var resultBox = document.getElementById("pm-result-box");
   if (!resultBox) return;
   resultBox.style.display = "flex";
+  
+  var ctxCard = document.getElementById("pm-context-card");
+  var ctxText = document.getElementById("pm-context-text");
+  if (ctxCard && ctxText) {
+    if (data.used_context && data.used_context.trim()) {
+      ctxCard.style.display = "block";
+      ctxText.textContent = data.used_context.trim();
+    } else {
+      ctxCard.style.display = "none";
+    }
+  }
   
   var charTag = document.getElementById("pm-char-tag");
   if (charTag) charTag.textContent = (data.character_name || "") + " · " + (data.role || "");

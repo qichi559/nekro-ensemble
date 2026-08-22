@@ -2391,6 +2391,7 @@ document.getElementById("messages").addEventListener("scroll",function(){
       <div class="prompt-card" id="pm-context-card" style="display:none">
         <div class="prompt-card-header">
           <span class="prompt-card-title">💬 提取到的真实聊天记录</span>
+          <button class="prompt-copy-btn" onclick="refreshChatContext()">🔄 刷新</button>
         </div>
         <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
       </div>
@@ -2502,6 +2503,11 @@ function fetchChatContextPreview() {
     if (seq !== ctxReqSeq) return;
     showContextPreview("");
   });
+}
+function refreshChatContext() {
+  var ctxInput = document.getElementById("pm-ctx-input");
+  if (ctxInput) ctxInput.value = "";
+  fetchChatContextPreview();
 }
 
 function switchPromptBot(botIndex) {
@@ -3246,6 +3252,7 @@ function pad(n){return n<10?"0"+n:n}
       <div class="prompt-card" id="pm-context-card" style="display:none">
         <div class="prompt-card-header">
           <span class="prompt-card-title">💬 提取到的真实聊天记录</span>
+          <button class="prompt-copy-btn" onclick="refreshChatContext()">🔄 刷新</button>
         </div>
         <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
       </div>
@@ -3357,6 +3364,11 @@ function fetchChatContextPreview() {
     if (seq !== ctxReqSeq) return;
     showContextPreview("");
   });
+}
+function refreshChatContext() {
+  var ctxInput = document.getElementById("pm-ctx-input");
+  if (ctxInput) ctxInput.value = "";
+  fetchChatContextPreview();
 }
 
 function switchPromptBot(botIndex) {

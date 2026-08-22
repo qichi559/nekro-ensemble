@@ -1411,8 +1411,9 @@ BOT_PERSONA_VISUAL_BENCHMARKS = {
     }
 }
 
-def _get_llm_for_prompt():
-    """获取当前可用于提炼生图 Prompt 的 LLM 配置 (base_url, api_key, model)"""
+def _get_candidate_llms_for_prompt():
+    """获取当前可用于提炼生图 Prompt 的 LLM 候选列表 [(group_name, base_url, api_key, model), ...]，活跃组排第一"""
+    candidates = []
     try:
         dd = get_bot_data_dir(1)
         if dd:
@@ -1425,14 +1426,14 @@ def _get_llm_for_prompt():
                 groups = cfg.get("MODEL_GROUPS", {})
                 if active_group in groups:
                     g = groups[active_group]
-                    if g.get("MODEL_TYPE") == "chat" and g.get("CHAT_MODEL") and g.get("BASE_URL"):
-                        return g.get("BASE_URL", "").rstrip("/"), g.get("API_KEY", ""), g.get("CHAT_MODEL", "")
-                for gname, g in groups.items():
                     if g.get("MODEL_TYPE") == "chat" and g.get("CHAT_MODEL") and g.get("BASE_URL") and g.get("API_KEY"):
-                        return g.get("BASE_URL", "").rstrip("/"), g.get("API_KEY", ""), g.get("CHAT_MODEL", "")
+                        candidates.append((active_group, g.get("BASE_URL", "").rstrip("/"), g.get("API_KEY", ""), g.get("CHAT_MODEL", "")))
+                for gname, g in groups.items():
+                    if gname != active_group and g.get("MODEL_TYPE") == "chat" and g.get("CHAT_MODEL") and g.get("BASE_URL") and g.get("API_KEY"):
+                        candidates.append((gname, g.get("BASE_URL", "").rstrip("/"), g.get("API_KEY", ""), g.get("CHAT_MODEL", "")))
     except Exception as e:
-        log(f"get_llm_for_prompt error: {e}")
-    return None, None, None
+        log(f"get_candidate_llms_for_prompt error: {e}")
+    return candidates
 
 def get_recent_chat_history(bot_index, limit=8):
     """获取指定 Bot 的最近聊天记录（优先从 PostgreSQL 数据库直读，确保包含 QQ 私聊/群聊与 WebUI 全量真实对话；失败则 fallback 到 Bridge）"""
@@ -1502,8 +1503,8 @@ def generate_scene_prompt(bot_index, custom_context="", style="novelai"):
     else:
         chat_text = custom_context.strip()
 
-    base_url, api_key, model = _get_llm_for_prompt()
-    if base_url and api_key and model:
+    candidates = _get_candidate_llms_for_prompt()
+    if candidates:
         sys_prompt = f"""You are an expert anime AI art prompt engineer specializing in NovelAI Diffusion V3, Stable Diffusion, and Danbooru tag conventions.
 Your mission is to analyze the given character base appearance and the RECENT CHAT CONTEXT between the character and the user, and synthesize a high-consistency, contextually accurate visual scene with English Danbooru tags and a vivid Chinese scene description.
 
@@ -1511,13 +1512,14 @@ Your mission is to analyze the given character base appearance and the RECENT CH
 {benchmark['tags']}
 
 IMPORTANT RULES:
-1. If generating for 爱弥斯 (Aemeath), you MUST strictly include the official character tag 'aemeath_(wuthering_waves)' as the first character tag right after '1girl, solo' (e.g. 'masterpiece, best quality, ultra-detailed, anime artwork, aemeath_(wuthering_waves), 1girl, solo focus, ...').
-2. Maintain high consistency with the character benchmark tags while adapting outfits, poses, micro-expressions and scenery to match the recent chat context.
+1. HIGHEST PRIORITY - CHAT DYNAMICS: The characters' real-time actions, poses, physical touches, emotional state, facial expressions, and clothing state (e.g. Disheveled, blushing, undressing, kissing, sitting, embracing) MUST be strictly derived from the RECENT CHAT CONTEXT. Do NOT invent unrelated scenes or revert to default backgrounds if the chat context indicates specific actions or interactions.
+2. If generating for 爱弥斯 (Aemeath), you MUST strictly include the official character tag 'aemeath_(wuthering_waves)' as the first character tag right after '1girl, solo' (e.g. 'masterpiece, best quality, ultra-detailed, anime artwork, aemeath_(wuthering_waves), 1girl, solo focus, ...').
+3. Maintain high consistency with the character benchmark tags while adapting outfits, poses, micro-expressions and scenery to match the recent chat context.
 
 Output strictly valid JSON:
 {{
   "character_name": "{preset_name}",
-  "scene_summary": "50-100字优美细腻的中文画面小传，生动描绘当下时间、地点、神态微表情、肢体动作、衣着状态与互动氛围",
+  "scene_summary": "50-100字优美细腻的中文画面小传，紧扣上述最近聊天上下文，生动描绘当下时间、地点、神态微表情、肢体动作、衣着状态与互动氛围",
   "positive_prompt": "masterpiece, best quality, ultra-detailed, anime artwork, (character tags), (current outfit tags), (expression/emotion tags), (pose/action tags), (environment/background tags), (lighting tags)",
   "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured",
   "parameters": {{
@@ -1529,65 +1531,71 @@ Output strictly valid JSON:
   }}
 }}
 """
-        user_content = f"【Recent Chat Context】:\n{chat_text if chat_text else '日常温馨相伴互动'}\n\nPlease extract the scene and synthesize the Prompt."
-        try:
-            req_data = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": sys_prompt},
-                    {"role": "user", "content": user_content}
-                ],
-                "temperature": 0.7
-            }
-            url = f"{base_url}/chat/completions"
-            req = urllib.request.Request(url, data=json.dumps(req_data).encode("utf-8"), headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
-            })
-            with urllib.request.urlopen(req, timeout=25) as resp:
-                res = json.loads(resp.read().decode("utf-8"))
-                raw_out = res["choices"][0]["message"]["content"].strip()
-                # 剥离 markdown 代码块
-                if "```" in raw_out:
-                    m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw_out)
-                    if m:
-                        raw_out = m.group(1).strip()
-                parsed = json.loads(raw_out)
-                pos_prompt = parsed.get("positive_prompt", benchmark["fallback_positive"])
-                if idx == 3 or "爱弥斯" in preset_name or "爱弥斯" in benchmark.get("name", ""):
-                    if "aemeath_(wuthering_waves)" not in pos_prompt.lower():
-                        if "1girl" in pos_prompt:
-                            pos_prompt = pos_prompt.replace("1girl", "aemeath_(wuthering_waves), 1girl", 1)
-                        else:
-                            pos_prompt = f"aemeath_(wuthering_waves), {pos_prompt}"
-
-                return {
-                    "ok": True,
-                    "character_name": parsed.get("character_name", preset_name),
-                    "role": benchmark["role"],
-                    "used_context": chat_text,
-                    "scene_summary": parsed.get("scene_summary", benchmark["fallback_summary"]),
-                    "positive_prompt": pos_prompt,
-                    "negative_prompt": parsed.get("negative_prompt", "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured"),
-                    "parameters": parsed.get("parameters", {
-                        "model": "NovelAI Diffusion V3 (Anime)",
-                        "resolution": "832x1216",
-                        "steps": 28,
-                        "scale": 5.5,
-                        "sampler": "Euler Ancestral"
-                    }),
-                    "nai_url": "https://nai.sta1n.cn/"
+        user_content = f"【Recent Chat Context】:\n{chat_text if chat_text else '日常温馨相伴互动'}\n\nPlease extract the scene directly from the chat context and synthesize the Prompt."
+        for gname, base_url, api_key, model in candidates[:3]:
+            try:
+                req_data = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    "temperature": 0.7
                 }
-        except Exception as e:
-            log(f"LLM generate_scene_prompt failed, falling back to rule tags: {e}")
+                timeout_val = 35 if ("thinking" in model.lower() or "opus" in model.lower() or "claude" in model.lower()) else 15
+                url = f"{base_url}/chat/completions"
+                req = urllib.request.Request(url, data=json.dumps(req_data).encode("utf-8"), headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}"
+                })
+                with urllib.request.urlopen(req, timeout=timeout_val) as resp:
+                    res = json.loads(resp.read().decode("utf-8"))
+                    raw_out = res["choices"][0]["message"]["content"].strip()
+                    # 剥离 markdown 代码块
+                    if "```" in raw_out:
+                        m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw_out)
+                        if m:
+                            raw_out = m.group(1).strip()
+                    parsed = json.loads(raw_out)
+                    pos_prompt = parsed.get("positive_prompt", benchmark["fallback_positive"])
+                    if idx == 3 or "爱弥斯" in preset_name or "爱弥斯" in benchmark.get("name", ""):
+                        if "aemeath_(wuthering_waves)" not in pos_prompt.lower():
+                            if "1girl" in pos_prompt:
+                                pos_prompt = pos_prompt.replace("1girl", "aemeath_(wuthering_waves), 1girl", 1)
+                            else:
+                                pos_prompt = f"aemeath_(wuthering_waves), {pos_prompt}"
+
+                    return {
+                        "ok": True,
+                        "is_fallback": False,
+                        "character_name": parsed.get("character_name", preset_name),
+                        "role": benchmark["role"],
+                        "used_context": chat_text,
+                        "scene_summary": parsed.get("scene_summary", benchmark["fallback_summary"]),
+                        "positive_prompt": pos_prompt,
+                        "negative_prompt": parsed.get("negative_prompt", "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured"),
+                        "parameters": parsed.get("parameters", {
+                            "model": "NovelAI Diffusion V3 (Anime)",
+                            "resolution": "832x1216",
+                            "steps": 28,
+                            "scale": 5.5,
+                            "sampler": "Euler Ancestral"
+                        }),
+                        "nai_url": "https://nai.sta1n.cn/",
+                        "model_used": f"{gname} ({model})"
+                    }
+            except Exception as e:
+                log(f"LLM group '{gname}' ({model}) generate_scene_prompt failed: {e}, trying next candidate...")
+                continue
 
     # Fallback 兜底生成
     return {
         "ok": True,
+        "is_fallback": True,
         "character_name": preset_name,
         "role": benchmark["role"],
         "used_context": chat_text,
-        "scene_summary": benchmark["fallback_summary"],
+        "scene_summary": f"【注意：大模型接口暂时限流或无响应，当前展示默认人设基准场景】\n{benchmark['fallback_summary']}",
         "positive_prompt": benchmark["fallback_positive"],
         "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured",
         "parameters": {
@@ -2500,7 +2508,12 @@ function renderPromptResult(data) {
   }
   
   var charTag = document.getElementById("pm-char-tag");
-  if (charTag) charTag.textContent = (data.character_name || "") + " · " + (data.role || "");
+  if (charTag) {
+    var tagStr = (data.character_name || "") + " · " + (data.role || "");
+    if (data.model_used) tagStr += " · 🤖 " + data.model_used;
+    if (data.is_fallback) tagStr += " · ⚠️ 静态兜底(模型限流)";
+    charTag.textContent = tagStr;
+  }
   
   var summary = document.getElementById("pm-summary-text");
   if (summary) summary.textContent = data.scene_summary || "暂无场景描述";
@@ -3283,7 +3296,12 @@ function renderPromptResult(data) {
   }
   
   var charTag = document.getElementById("pm-char-tag");
-  if (charTag) charTag.textContent = (data.character_name || "") + " · " + (data.role || "");
+  if (charTag) {
+    var tagStr = (data.character_name || "") + " · " + (data.role || "");
+    if (data.model_used) tagStr += " · 🤖 " + data.model_used;
+    if (data.is_fallback) tagStr += " · ⚠️ 静态兜底(模型限流)";
+    charTag.textContent = tagStr;
+  }
   
   var summary = document.getElementById("pm-summary-text");
   if (summary) summary.textContent = data.scene_summary || "暂无场景描述";

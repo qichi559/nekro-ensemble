@@ -1405,8 +1405,8 @@ BOT_PERSONA_VISUAL_BENCHMARKS = {
     3: {
         "name": "爱弥斯",
         "role": "隧者共鸣者/飞行雪绒歌手/星炬学院学生",
-        "tags": "- 核心外貌: 1girl, solo, magical idol singer, sci-fi resonator, sakura pink hair, golden highlights, gradient hair, pink to white hair tips, ahoge, very long high ponytail, floor-length ponytail, cross-star eyes, star-shaped pupils, heterochromia, amber gold eyes, rose gold eyes, glowing heart crest on chest, heart-shaped resonance mark between breasts, gradient chest tattoo (pink to light blue), voluptuous, toned body, tiny waist, flat stomach, navel, long slender legs\n- 服饰: futuristic idol costume, sci-fi idol dress, high-tech ornaments, detached sleeves, thigh strap, white and rose gold accents\n- 场景: 拉海洛冰原、渐湖边的湖畔小屋、雪景、窗外星空与极光、纯白与浅蓝雪景",
-        "fallback_positive": "masterpiece, best quality, ultra-detailed, anime artwork, 1girl, solo, magical idol singer, sci-fi resonator, sakura pink hair, golden highlights, gradient hair, pink to white hair tips, ahoge, very long high ponytail, floor-length ponytail, cross-star eyes, star-shaped pupils, heterochromia, amber gold eyes, rose gold eyes, glowing heart crest on chest, heart-shaped resonance mark between breasts, gradient chest tattoo, voluptuous, toned body, tiny waist, flat stomach, navel, long slender legs, futuristic idol dress, detached sleeves, thigh strap, white and rose gold accents, smile, joyful expression, head tilt, holding hands, snowy lakeside house, window, lahailo icefield, frozen lake, starry night sky, aurora borealis, snowflakes, glowing light particles, cinematic lighting",
+        "tags": "- 官方角色Tag (必带，最高优先级): aemeath_(wuthering_waves), 1girl, solo focus\n- 核心外貌: magical idol singer, sci-fi resonator, sakura pink hair, golden highlights, gradient hair, pink to white hair tips, ahoge, very long high ponytail, floor-length ponytail, cross-star eyes, star-shaped pupils, heterochromia, amber gold eyes, rose gold eyes, glowing heart crest on chest, heart-shaped resonance mark between breasts, gradient chest tattoo (pink to light blue), voluptuous, toned body, tiny waist, flat stomach, navel, long slender legs\n- 服饰: futuristic idol costume, sci-fi idol dress, high-tech ornaments, detached sleeves, thigh strap, white and rose gold accents\n- 场景: 拉海洛冰原、渐湖边的湖畔小屋、雪景、窗外星空与极光、纯白与浅蓝雪景",
+        "fallback_positive": "masterpiece, best quality, ultra-detailed, anime artwork, aemeath_(wuthering_waves), 1girl, solo focus, magical idol singer, sci-fi resonator, sakura pink hair, golden highlights, gradient hair, pink to white hair tips, ahoge, very long high ponytail, floor-length ponytail, cross-star eyes, star-shaped pupils, heterochromia, amber gold eyes, rose gold eyes, glowing heart crest on chest, heart-shaped resonance mark between breasts, gradient chest tattoo, voluptuous, toned body, tiny waist, flat stomach, navel, long slender legs, futuristic idol dress, detached sleeves, thigh strap, white and rose gold accents, smile, joyful expression, head tilt, holding hands, snowy lakeside house, window, lahailo icefield, frozen lake, starry night sky, aurora borealis, snowflakes, glowing light particles, cinematic lighting",
         "fallback_summary": "拉海洛冰原深处的渐湖边，小屋窗外是漫天璀璨的极光与纷飞的细雪。爱弥斯扎着及臀的超长粉金高马尾，头顶呆毛随着雀跃轻晃，胸口爱心状的共鸣声痕泛着桃白水蓝的微光。她十字星状的琥珀玫瑰金双瞳倒映着星河，眉眼弯弯地扑进你怀里，用充满元气又满含深情的嗓音为你轻声哼唱着恋曲。",
     }
 }
@@ -1510,6 +1510,10 @@ Your mission is to analyze the given character base appearance and the RECENT CH
 [Character Appearance Benchmark - {preset_name} ({benchmark['role']})]:
 {benchmark['tags']}
 
+IMPORTANT RULES:
+1. If generating for 爱弥斯 (Aemeath), you MUST strictly include the official character tag 'aemeath_(wuthering_waves)' as the first character tag right after '1girl, solo' (e.g. 'masterpiece, best quality, ultra-detailed, anime artwork, aemeath_(wuthering_waves), 1girl, solo focus, ...').
+2. Maintain high consistency with the character benchmark tags while adapting outfits, poses, micro-expressions and scenery to match the recent chat context.
+
 Output strictly valid JSON:
 {{
   "character_name": "{preset_name}",
@@ -1549,13 +1553,21 @@ Output strictly valid JSON:
                     if m:
                         raw_out = m.group(1).strip()
                 parsed = json.loads(raw_out)
+                pos_prompt = parsed.get("positive_prompt", benchmark["fallback_positive"])
+                if idx == 3 or "爱弥斯" in preset_name or "爱弥斯" in benchmark.get("name", ""):
+                    if "aemeath_(wuthering_waves)" not in pos_prompt.lower():
+                        if "1girl" in pos_prompt:
+                            pos_prompt = pos_prompt.replace("1girl", "aemeath_(wuthering_waves), 1girl", 1)
+                        else:
+                            pos_prompt = f"aemeath_(wuthering_waves), {pos_prompt}"
+
                 return {
                     "ok": True,
                     "character_name": parsed.get("character_name", preset_name),
                     "role": benchmark["role"],
                     "used_context": chat_text,
                     "scene_summary": parsed.get("scene_summary", benchmark["fallback_summary"]),
-                    "positive_prompt": parsed.get("positive_prompt", benchmark["fallback_positive"]),
+                    "positive_prompt": pos_prompt,
                     "negative_prompt": parsed.get("negative_prompt", "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured"),
                     "parameters": parsed.get("parameters", {
                         "model": "NovelAI Diffusion V3 (Anime)",

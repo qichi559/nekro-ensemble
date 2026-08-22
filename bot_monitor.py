@@ -116,7 +116,7 @@ def get_bot_data_dir(bot_index):
         pass
     return ""
 
-MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt"}
+MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context"}
 
 def is_monitor_route(path):
     if path in MONITOR_API_ROUTES:
@@ -2388,13 +2388,13 @@ document.getElementById("messages").addEventListener("scroll",function(){
       <button class="prompt-gen-btn" id="pm-gen-btn" onclick="executeGeneratePrompt()">
         <span>✨</span><span id="pm-gen-btn-text">提炼场景生图 Prompt</span>
       </button>
-      <div class="prompt-result-section" id="pm-result-box" style="display:none">
-        <div class="prompt-card" id="pm-context-card" style="display:none">
-          <div class="prompt-card-header">
-            <span class="prompt-card-title">💬 提取到的真实聊天记录</span>
-          </div>
-          <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
+      <div class="prompt-card" id="pm-context-card" style="display:none">
+        <div class="prompt-card-header">
+          <span class="prompt-card-title">💬 提取到的真实聊天记录</span>
         </div>
+        <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
+      </div>
+      <div class="prompt-result-section" id="pm-result-box" style="display:none">
         <div class="prompt-card">
           <div class="prompt-card-header">
             <span class="prompt-card-title">📝 画面场景小传</span>
@@ -2455,12 +2455,53 @@ function openPromptModal(botIndex, prefilledContext) {
   if (ctxInput) {
     ctxInput.value = prefilledContext || "";
   }
-  executeGeneratePrompt();
+  var resultBox = document.getElementById("pm-result-box");
+  if (resultBox) resultBox.style.display = "none";
+  if (prefilledContext && prefilledContext.trim()) {
+    showContextPreview(prefilledContext);
+  } else {
+    fetchChatContextPreview();
+  }
 }
 
 function closePromptModal() {
   var modal = document.getElementById("prompt-modal");
   if (modal) modal.classList.remove("active");
+}
+
+var ctxReqSeq = 0;
+function showContextPreview(text) {
+  var ctxCard = document.getElementById("pm-context-card");
+  var ctxText = document.getElementById("pm-context-text");
+  if (ctxCard && ctxText) {
+    if (text && text.trim()) {
+      ctxCard.style.display = "block";
+      ctxText.textContent = text.trim();
+    } else {
+      ctxCard.style.display = "none";
+    }
+  }
+}
+function fetchChatContextPreview() {
+  var seq = ++ctxReqSeq;
+  var ctxCard = document.getElementById("pm-context-card");
+  var ctxText = document.getElementById("pm-context-text");
+  if (ctxCard) ctxCard.style.display = "block";
+  if (ctxText) ctxText.textContent = "正在提取该 Bot 最近聊天记录...";
+  fetch("/api/chat-context", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({bot: currentPromptBot})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (seq !== ctxReqSeq) return;
+    showContextPreview(d && d.ok ? (d.used_context || "") : "");
+  })
+  .catch(function() {
+    if (seq !== ctxReqSeq) return;
+    showContextPreview("");
+  });
 }
 
 function switchPromptBot(botIndex) {
@@ -2471,7 +2512,9 @@ function switchPromptBot(botIndex) {
   });
   var ctxInput = document.getElementById("pm-ctx-input");
   if (ctxInput) ctxInput.value = "";
-  executeGeneratePrompt();
+  var resultBox = document.getElementById("pm-result-box");
+  if (resultBox) resultBox.style.display = "none";
+  fetchChatContextPreview();
 }
 
 function executeGeneratePrompt() {
@@ -3200,13 +3243,13 @@ function pad(n){return n<10?"0"+n:n}
       <button class="prompt-gen-btn" id="pm-gen-btn" onclick="executeGeneratePrompt()">
         <span>✨</span><span id="pm-gen-btn-text">提炼场景生图 Prompt</span>
       </button>
-      <div class="prompt-result-section" id="pm-result-box" style="display:none">
-        <div class="prompt-card" id="pm-context-card" style="display:none">
-          <div class="prompt-card-header">
-            <span class="prompt-card-title">💬 提取到的真实聊天记录</span>
-          </div>
-          <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
+      <div class="prompt-card" id="pm-context-card" style="display:none">
+        <div class="prompt-card-header">
+          <span class="prompt-card-title">💬 提取到的真实聊天记录</span>
         </div>
+        <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
+      </div>
+      <div class="prompt-result-section" id="pm-result-box" style="display:none">
         <div class="prompt-card">
           <div class="prompt-card-header">
             <span class="prompt-card-title">📝 画面场景小传</span>
@@ -3267,12 +3310,53 @@ function openPromptModal(botIndex, prefilledContext) {
   if (ctxInput) {
     ctxInput.value = prefilledContext || "";
   }
-  executeGeneratePrompt();
+  var resultBox = document.getElementById("pm-result-box");
+  if (resultBox) resultBox.style.display = "none";
+  if (prefilledContext && prefilledContext.trim()) {
+    showContextPreview(prefilledContext);
+  } else {
+    fetchChatContextPreview();
+  }
 }
 
 function closePromptModal() {
   var modal = document.getElementById("prompt-modal");
   if (modal) modal.classList.remove("active");
+}
+
+var ctxReqSeq = 0;
+function showContextPreview(text) {
+  var ctxCard = document.getElementById("pm-context-card");
+  var ctxText = document.getElementById("pm-context-text");
+  if (ctxCard && ctxText) {
+    if (text && text.trim()) {
+      ctxCard.style.display = "block";
+      ctxText.textContent = text.trim();
+    } else {
+      ctxCard.style.display = "none";
+    }
+  }
+}
+function fetchChatContextPreview() {
+  var seq = ++ctxReqSeq;
+  var ctxCard = document.getElementById("pm-context-card");
+  var ctxText = document.getElementById("pm-context-text");
+  if (ctxCard) ctxCard.style.display = "block";
+  if (ctxText) ctxText.textContent = "正在提取该 Bot 最近聊天记录...";
+  fetch("/api/chat-context", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({bot: currentPromptBot})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (seq !== ctxReqSeq) return;
+    showContextPreview(d && d.ok ? (d.used_context || "") : "");
+  })
+  .catch(function() {
+    if (seq !== ctxReqSeq) return;
+    showContextPreview("");
+  });
 }
 
 function switchPromptBot(botIndex) {
@@ -3283,7 +3367,9 @@ function switchPromptBot(botIndex) {
   });
   var ctxInput = document.getElementById("pm-ctx-input");
   if (ctxInput) ctxInput.value = "";
-  executeGeneratePrompt();
+  var resultBox = document.getElementById("pm-result-box");
+  if (resultBox) resultBox.style.display = "none";
+  fetchChatContextPreview();
 }
 
 function executeGeneratePrompt() {
@@ -3977,6 +4063,20 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({"ok": ok, "msg": msg}, ensure_ascii=False).encode())
+            except Exception as e:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
+        elif self.path == "/api/chat-context":
+            try:
+                req = json.loads(body) if body else {}
+                bot = req.get("bot", 1)
+                ctx = get_recent_chat_history(bot, limit=8)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "used_context": ctx}, ensure_ascii=False).encode())
             except Exception as e:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

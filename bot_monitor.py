@@ -116,7 +116,7 @@ def get_bot_data_dir(bot_index):
         pass
     return ""
 
-MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/test-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context", "/api/tag-lib", "/api/tag-lib/add", "/api/tag-lib/delete", "/api/tag-lib/import", "/api/visual-benchmarks", "/api/visual-benchmarks/reset"}
+MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/test-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context", "/api/visual-benchmarks", "/api/visual-benchmarks/reset"}
 
 def is_monitor_route(path):
     if path in MONITOR_API_ROUTES:
@@ -1461,169 +1461,6 @@ def _reset_visual_benchmark(bot_index):
         log(f"reset visual benchmark save error: {e}")
     return True
 
-# ===== 标签库（tag_lib.json，生图弹窗可点选使用） =====
-_TAG_LIB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tag_lib.json")
-
-def _get_default_tag_lib():
-    """内置初始 Danbooru 标签库（大类 -> 子类 -> 双语标签）"""
-    return {
-        "categories": [
-            {"name": "画质", "subcategories": [{"name": "通用", "tags": [
-                {"en": "masterpiece", "zh": "杰作"}, {"en": "best quality", "zh": "最佳画质"},
-                {"en": "ultra-detailed", "zh": "超精细"}, {"en": "highres", "zh": "高分辨率"},
-                {"en": "absurdres", "zh": "超高分辨率"}, {"en": "high quality", "zh": "高质量"},
-            ]}]},
-            {"name": "风格", "subcategories": [{"name": "通用", "tags": [
-                {"en": "anime artwork", "zh": "动漫风格"}, {"en": "detailed background", "zh": "精细背景"},
-                {"en": "cinematic lighting", "zh": "电影布光"}, {"en": "depth of field", "zh": "景深"},
-                {"en": "watercolor", "zh": "水彩"}, {"en": "sketch", "zh": "素描"},
-            ]}]},
-            {"name": "角色", "subcategories": [{"name": "通用", "tags": [
-                {"en": "1girl", "zh": "单个女孩"}, {"en": "1boy", "zh": "单个男孩"}, {"en": "solo", "zh": "单人"},
-            ]}]},
-            {"name": "发型", "subcategories": [{"name": "长度/样式", "tags": [
-                {"en": "long hair", "zh": "长发"}, {"en": "very long hair", "zh": "超长发"},
-                {"en": "short hair", "zh": "短发"}, {"en": "twintails", "zh": "双马尾"},
-                {"en": "ponytail", "zh": "马尾"}, {"en": "braid", "zh": "麻花辫"},
-                {"en": "ahoge", "zh": "呆毛"}, {"en": "loose hair", "zh": "散发"},
-            ]}]},
-            {"name": "发色", "subcategories": [{"name": "通用", "tags": [
-                {"en": "blonde hair", "zh": "金发"}, {"en": "brown hair", "zh": "棕发"},
-                {"en": "black hair", "zh": "黑发"}, {"en": "white hair", "zh": "白发"},
-                {"en": "pink hair", "zh": "粉发"}, {"en": "blue hair", "zh": "蓝发"},
-                {"en": "purple hair", "zh": "紫发"}, {"en": "red hair", "zh": "红发"},
-            ]}]},
-            {"name": "眼睛", "subcategories": [{"name": "通用", "tags": [
-                {"en": "blue eyes", "zh": "蓝瞳"}, {"en": "red eyes", "zh": "红瞳"},
-                {"en": "green eyes", "zh": "绿瞳"}, {"en": "heterochromia", "zh": "异色瞳"},
-                {"en": "glowing eyes", "zh": "发光眼"}, {"en": "closed eyes", "zh": "闭眼"},
-                {"en": "half-closed eyes", "zh": "半睁眼"},
-            ]}]},
-            {"name": "表情", "subcategories": [{"name": "通用", "tags": [
-                {"en": "smile", "zh": "微笑"}, {"en": "blush", "zh": "脸红"},
-                {"en": "crying", "zh": "哭泣"}, {"en": "laughing", "zh": "大笑"},
-                {"en": "angry", "zh": "生气"}, {"en": "surprised", "zh": "惊讶"},
-                {"en": "sad", "zh": "难过"}, {"en": "sleepy", "zh": "困倦"},
-            ]}]},
-            {"name": "服装", "subcategories": [{"name": "通用", "tags": [
-                {"en": "school uniform", "zh": "校服"}, {"en": "dress", "zh": "连衣裙"},
-                {"en": "kimono", "zh": "和服"}, {"en": "maid outfit", "zh": "女仆装"},
-                {"en": "swimsuit", "zh": "泳装"}, {"en": "hoodie", "zh": "连帽衫"},
-                {"en": "miniskirt", "zh": "迷你裙"}, {"en": "thighhighs", "zh": "过膝袜"},
-            ]}]},
-            {"name": "身体", "subcategories": [{"name": "通用", "tags": [
-                {"en": "large breasts", "zh": "巨乳"}, {"en": "flat chest", "zh": "贫乳"},
-                {"en": "wide hips", "zh": "宽胯"}, {"en": "slim body", "zh": "纤细身材"},
-                {"en": "long legs", "zh": "长腿"}, {"en": "bare shoulders", "zh": "露肩"},
-                {"en": "navel", "zh": "露脐"}, {"en": "midriff", "zh": "露腰"},
-            ]}]},
-            {"name": "姿势", "subcategories": [{"name": "通用", "tags": [
-                {"en": "sitting", "zh": "坐姿"}, {"en": "standing", "zh": "站姿"},
-                {"en": "lying", "zh": "躺姿"}, {"en": "kneeling", "zh": "跪姿"},
-                {"en": "looking at viewer", "zh": "注视镜头"}, {"en": "embracing", "zh": "拥抱"},
-                {"en": "holding hands", "zh": "牵手"}, {"en": "arm up", "zh": "举手"},
-            ]}]},
-            {"name": "场景", "subcategories": [{"name": "通用", "tags": [
-                {"en": "outdoors", "zh": "户外"}, {"en": "indoors", "zh": "室内"},
-                {"en": "bedroom", "zh": "卧室"}, {"en": "beach", "zh": "海滩"},
-                {"en": "forest", "zh": "森林"}, {"en": "night", "zh": "夜晚"},
-                {"en": "sunset", "zh": "日落"}, {"en": "rain", "zh": "雨"},
-                {"en": "snow", "zh": "雪"}, {"en": "starry sky", "zh": "星空"},
-                {"en": "cityscape", "zh": "城市景观"},
-            ]}]},
-            {"name": "光照", "subcategories": [{"name": "通用", "tags": [
-                {"en": "soft light", "zh": "柔光"}, {"en": "warm lighting", "zh": "暖光"},
-                {"en": "neon lights", "zh": "霓虹灯"}, {"en": "backlighting", "zh": "逆光"},
-                {"en": "volumetric lighting", "zh": "体积光"}, {"en": "sunlight", "zh": "阳光"},
-            ]}]},
-        ]
-    }
-
-def _load_tag_lib():
-    try:
-        if os.path.exists(_TAG_LIB_FILE):
-            with open(_TAG_LIB_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict) and isinstance(data.get("categories"), list):
-                    return data
-    except Exception as e:
-        log(f"load tag_lib.json error: {e}")
-    return _get_default_tag_lib()
-
-def _save_tag_lib(lib):
-    try:
-        with open(_TAG_LIB_FILE, "w", encoding="utf-8") as f:
-            json.dump(lib, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception as e:
-        log(f"save tag_lib.json error: {e}")
-        return False
-
-def _tag_lib_add(category, subcategory, en, zh):
-    """添加标签：大类/子类不存在时自动创建。返回 (ok, msg)"""
-    lib = _load_tag_lib()
-    cats = lib.setdefault("categories", [])
-    cat = None
-    for c in cats:
-        if c.get("name") == category:
-            cat = c
-            break
-    if cat is None:
-        cat = {"name": category, "subcategories": []}
-        cats.append(cat)
-    subs = cat.setdefault("subcategories", [])
-    sub = None
-    for s in subs:
-        if s.get("name") == subcategory:
-            sub = s
-            break
-    if sub is None:
-        sub = {"name": subcategory, "tags": []}
-        subs.append(sub)
-    tags = sub.setdefault("tags", [])
-    for t in tags:
-        if t.get("en", "").lower() == en.lower():
-            return False, "标签已存在"
-    tags.append({"en": en, "zh": zh})
-    if _save_tag_lib(lib):
-        return True, f"已添加: {category}/{subcategory}/{en}"
-    return False, "保存失败"
-
-def _tag_lib_delete(category, subcategory, en):
-    lib = _load_tag_lib()
-    for c in lib.get("categories", []):
-        if c.get("name") != category:
-            continue
-        for s in c.get("subcategories", []):
-            if s.get("name") != subcategory:
-                continue
-            tags = s.get("tags", [])
-            for i, t in enumerate(tags):
-                if t.get("en", "").lower() == en.lower():
-                    del tags[i]
-                    _save_tag_lib(lib)
-                    return True, f"已删除: {en}"
-            return False, "标签不存在"
-    return False, "分类或子类不存在"
-
-def _get_visual_benchmarks_payload():
-    """GET 接口返回：每个角色的生效基准 + 是否被用户修改"""
-    merged = _get_visual_benchmarks()
-    out = []
-    for idx in sorted(merged.keys(), key=int):
-        d = merged[idx]
-        custom = _VB_CUSTOM.get(idx, {})
-        out.append({
-            "bot_index": int(idx),
-            "name": d.get("name", ""),
-            "role": d.get("role", ""),
-            "tags": d.get("tags", ""),
-            "fallback_positive": d.get("fallback_positive", ""),
-            "fallback_summary": d.get("fallback_summary", ""),
-            "modified": any(k in custom for k in ("role", "tags", "fallback_positive", "fallback_summary"))
-        })
-    return out
-
 def _get_candidate_llms_for_prompt():
     """获取当前可用于提炼生图 Prompt 的 LLM 候选列表 [(group_name, base_url, api_key, model), ...]，活跃组排第一"""
     candidates = []
@@ -1718,7 +1555,7 @@ def get_recent_chat_history(bot_index, limit=10):
 
     return ""
 
-def generate_scene_prompt(bot_index, custom_context="", style="novelai", extra_tags=""):
+def generate_scene_prompt(bot_index, custom_context="", style="novelai"):
     """根据聊天上下文与人设外貌生成生图 Prompt"""
     try:
         idx = int(bot_index)
@@ -1798,14 +1635,6 @@ Output strictly valid JSON:
                             else:
                                 pos_prompt = f"aemeath_(wuthering_waves), {pos_prompt}"
 
-                    if extra_tags:
-                        extra_clean = ", ".join([t.strip() for t in extra_tags.split(",") if t.strip()])
-                        if extra_clean:
-                            existing = [t.strip().lower() for t in pos_prompt.split(",")]
-                            add = [t for t in extra_clean.split(",") if t.strip().lower() not in existing]
-                            if add:
-                                pos_prompt = pos_prompt.rstrip(", ") + ", " + ", ".join(add)
-
                     return {
                         "ok": True,
                         "is_fallback": False,
@@ -1837,7 +1666,7 @@ Output strictly valid JSON:
         "role": benchmark["role"],
         "used_context": chat_text,
         "scene_summary": f"【注意：大模型接口暂时限流或无响应，当前展示默认人设基准场景】\n{benchmark['fallback_summary']}",
-        "positive_prompt": benchmark["fallback_positive"] + ((", " + ", ".join([t.strip() for t in extra_tags.split(",") if t.strip()])) if extra_tags else ""),
+        "positive_prompt": benchmark["fallback_positive"],
         "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured",
         "parameters": {
             "model": "NovelAI Diffusion V3 (Anime)",
@@ -2366,10 +2195,6 @@ body{
   margin-left:0;line-height:1;white-space:nowrap;width:auto;min-width:100px;
 }
 .main-btn-prompt:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(236,72,153,.5)}
-.tag-chip{display:inline-block;padding:2px 8px;margin:2px 3px 2px 0;border-radius:10px;font-size:0.68rem;cursor:pointer;background:rgba(244,114,182,0.12);color:#9d174d;border:1px solid rgba(244,114,182,0.25);transition:all .15s;user-select:none;-webkit-user-select:none}
-.tag-chip:hover{background:rgba(244,114,182,0.28)}
-.tag-chip-on{background:linear-gradient(135deg,#ec4899,#d946ef);color:#fff;border-color:transparent}
-.tag-chip-on:hover{background:linear-gradient(135deg,#ec4899,#d946ef);color:#fff}
 .btn-txt-full{display:inline}
 .btn-txt-short{display:none}
 
@@ -2672,34 +2497,7 @@ document.getElementById("messages").addEventListener("scroll",function(){
           </div>
         </div>
       </div>
-      <div class="prompt-card" id="pm-tag-card">
-        <div class="prompt-card-header" style="cursor:pointer" onclick="toggleTagLib()">
-          <span class="prompt-card-title">🏷️ 标签库 <span id="pm-tag-count" style="font-size:0.62rem;color:#f0a6c9"></span></span>
-          <span style="display:flex;gap:6px" onclick="event.stopPropagation()">
-            <button class="prompt-copy-btn" onclick="showAddTagForm()">＋ 添加</button>
-            <button class="prompt-copy-btn" onclick="clearSelectedTags()">✕ 清空</button>
-          </span>
-        </div>
-        <div id="pm-tag-selected" style="display:none;margin-bottom:8px;font-size:0.7rem;color:#be185d;background:rgba(255,255,255,0.55);border-radius:6px;padding:6px 8px;line-height:1.8">
-          <span style="font-weight:600">已选：</span><span id="pm-tag-selected-chips"></span>
-        </div>
-        <div id="pm-tag-lib" style="display:none;max-height:200px;overflow-y:auto">加载中...</div>
-        <div id="pm-tag-add-form" style="display:none;margin-top:8px">
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <input class="prompt-ctx-input" id="pm-tag-add-cat" placeholder="大类(如:服饰)" style="min-height:32px;max-height:32px;flex:1;min-width:90px">
-            <input class="prompt-ctx-input" id="pm-tag-add-sub" placeholder="子类(如:上衣)" style="min-height:32px;max-height:32px;flex:1;min-width:90px">
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-            <input class="prompt-ctx-input" id="pm-tag-add-en" placeholder="英文标签 (long hair)" style="min-height:32px;max-height:32px;flex:2;min-width:120px">
-            <input class="prompt-ctx-input" id="pm-tag-add-zh" placeholder="中文备注(可选)" style="min-height:32px;max-height:32px;flex:1;min-width:80px">
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="prompt-gen-btn" style="flex:2" onclick="submitAddTag()">💾 添加标签</button>
-            <button class="prompt-copy-btn" style="flex:1;justify-content:center;padding:8px;font-size:0.78rem;border-radius:10px" onclick="document.getElementById(&#39;pm-tag-add-form&#39;).style.display=&#39;none&#39;">取消</button>
-          </div>
-        </div>
-      </div>
-      <div class="prompt-result-section" id="pm-result-box" style="display:none">
+            <div class="prompt-result-section" id="pm-result-box" style="display:none">
         <div class="prompt-card">
           <div class="prompt-card-header">
             <span class="prompt-card-title">📝 画面场景小传</span>
@@ -2815,74 +2613,7 @@ function refreshChatContext() {
   fetchChatContextPreview();
 }
 var vbDataCache = {};
-var selectedTags = [];
-var tagLib = [];
-function toggleTagLib() {
-  var el = document.getElementById("pm-tag-lib");
-  if (!el) return;
-  var show = el.style.display === "none";
-  el.style.display = show ? "block" : "none";
-  if (show) loadTagLib();
-}
-function loadTagLib() {
-  fetch("/api/tag-lib").then(function(r) { return r.json(); }).then(function(d) {
-    tagLib = (d && d.categories) || [];
-    renderTagLib();
-  }).catch(function() {});
-}
-function renderTagLib() {
-  var el = document.getElementById("pm-tag-lib");
-  var cnt = document.getElementById("pm-tag-count");
-  if (!el) return;
-  if (cnt) cnt.textContent = tagLib.length + " 类";
-  var html = "";
-  tagLib.forEach(function(cat) {
-    html += '<div style="font-size:0.72rem;font-weight:700;color:#be185d;margin:6px 0 3px">' + esc(cat.name || "") + '</div>';
-    (cat.subcategories || []).forEach(function(sub) {
-      var chips = (sub.tags || []).map(function(t) {
-        var sel = selectedTags.indexOf(t.en) >= 0 ? " tag-chip-on" : "";
-        return '<span class="tag-chip' + sel + '" onclick="toggleTagChip(&#39;' + esc(t.en).replace(/'/g, "\'") + '&#39;)" title="' + esc(t.zh || "") + '">' + esc(t.en) + '</span>';
-      }).join("");
-      if (chips) html += '<div style="font-size:0.63rem;color:#c084a8;margin:2px 0 1px">' + esc(sub.name || "") + '</div><div>' + chips + '</div>';
-    });
-  });
-  el.innerHTML = html || '<div style="font-size:0.7rem;color:#c084a8;padding:6px">标签库为空，点右上角「＋ 添加」添加标签</div>';
-}
-function toggleTagChip(en) {
-  var i = selectedTags.indexOf(en);
-  if (i >= 0) selectedTags.splice(i, 1); else selectedTags.push(en);
-  renderTagLib();
-  renderTagSelected();
-}
-function renderTagSelected() {
-  var box = document.getElementById("pm-tag-selected");
-  var chips = document.getElementById("pm-tag-selected-chips");
-  if (!box || !chips) return;
-  if (!selectedTags.length) { box.style.display = "none"; return; }
-  box.style.display = "block";
-  chips.innerHTML = selectedTags.map(function(en) {
-    return '<span class="tag-chip tag-chip-on" onclick="toggleTagChip(&#39;' + esc(en).replace(/'/g, "\'") + '&#39;)">' + esc(en) + ' ✕</span>';
-  }).join("");
-}
-function clearSelectedTags() { selectedTags = []; renderTagLib(); renderTagSelected(); }
-function showAddTagForm() { document.getElementById("pm-tag-add-form").style.display = "block"; }
-function submitAddTag() {
-  var cat = document.getElementById("pm-tag-add-cat").value.trim();
-  var sub = document.getElementById("pm-tag-add-sub").value.trim();
-  var en = document.getElementById("pm-tag-add-en").value.trim();
-  var zh = document.getElementById("pm-tag-add-zh").value.trim();
-  if (!cat || !sub || !en) { showToast("分类/子类/英文标签不能为空", "error"); return; }
-  fetch("/api/tag-lib/add", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({category: cat, subcategory: sub, en: en, zh: zh})})
-    .then(function(r) { return r.json(); }).then(function(d) {
-      showToast(d.msg || (d.ok ? "已添加" : "添加失败"), d.ok ? "success" : "error");
-      if (d.ok) {
-        document.getElementById("pm-tag-add-form").style.display = "none";
-        document.getElementById("pm-tag-add-en").value = "";
-        document.getElementById("pm-tag-add-zh").value = "";
-        loadTagLib();
-      }
-    }).catch(function(e) { showToast("请求失败: " + e.message, "error"); });
-}
+
 function renderVbSection() {
   var view = document.getElementById("pm-vb-view");
   var modEl = document.getElementById("pm-vb-modified");
@@ -2963,8 +2694,6 @@ function switchPromptBot(botIndex) {
   if (resultBox) resultBox.style.display = "none";
   fetchChatContextPreview();
   renderVbSection();
-  selectedTags = [];
-  renderTagSelected();
 }
 
 function executeGeneratePrompt() {
@@ -2983,8 +2712,7 @@ function executeGeneratePrompt() {
     body: JSON.stringify({
       bot: currentPromptBot,
       context: customCtx,
-      style: "novelai",
-      extra_tags: selectedTags.join(", ")
+      style: "novelai"
     })
   })
   .then(function(r) { return r.json(); })
@@ -3526,10 +3254,6 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
   margin-left:0;line-height:1;white-space:nowrap;width:auto;min-width:100px;
 }
 .main-btn-prompt:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(236,72,153,.5)}
-.tag-chip{display:inline-block;padding:2px 8px;margin:2px 3px 2px 0;border-radius:10px;font-size:0.68rem;cursor:pointer;background:rgba(244,114,182,0.12);color:#9d174d;border:1px solid rgba(244,114,182,0.25);transition:all .15s;user-select:none;-webkit-user-select:none}
-.tag-chip:hover{background:rgba(244,114,182,0.28)}
-.tag-chip-on{background:linear-gradient(135deg,#ec4899,#d946ef);color:#fff;border-color:transparent}
-.tag-chip-on:hover{background:linear-gradient(135deg,#ec4899,#d946ef);color:#fff}
 .main-btn-vb{
   background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;
   border:none;box-shadow:0 4px 12px rgba(99,102,241,.35);
@@ -3758,34 +3482,7 @@ function pad(n){return n<10?"0"+n:n}
           </div>
         </div>
       </div>
-      <div class="prompt-card" id="pm-tag-card">
-        <div class="prompt-card-header" style="cursor:pointer" onclick="toggleTagLib()">
-          <span class="prompt-card-title">🏷️ 标签库 <span id="pm-tag-count" style="font-size:0.62rem;color:#f0a6c9"></span></span>
-          <span style="display:flex;gap:6px" onclick="event.stopPropagation()">
-            <button class="prompt-copy-btn" onclick="showAddTagForm()">＋ 添加</button>
-            <button class="prompt-copy-btn" onclick="clearSelectedTags()">✕ 清空</button>
-          </span>
-        </div>
-        <div id="pm-tag-selected" style="display:none;margin-bottom:8px;font-size:0.7rem;color:#be185d;background:rgba(255,255,255,0.55);border-radius:6px;padding:6px 8px;line-height:1.8">
-          <span style="font-weight:600">已选：</span><span id="pm-tag-selected-chips"></span>
-        </div>
-        <div id="pm-tag-lib" style="display:none;max-height:200px;overflow-y:auto">加载中...</div>
-        <div id="pm-tag-add-form" style="display:none;margin-top:8px">
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <input class="prompt-ctx-input" id="pm-tag-add-cat" placeholder="大类(如:服饰)" style="min-height:32px;max-height:32px;flex:1;min-width:90px">
-            <input class="prompt-ctx-input" id="pm-tag-add-sub" placeholder="子类(如:上衣)" style="min-height:32px;max-height:32px;flex:1;min-width:90px">
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-            <input class="prompt-ctx-input" id="pm-tag-add-en" placeholder="英文标签 (long hair)" style="min-height:32px;max-height:32px;flex:2;min-width:120px">
-            <input class="prompt-ctx-input" id="pm-tag-add-zh" placeholder="中文备注(可选)" style="min-height:32px;max-height:32px;flex:1;min-width:80px">
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="prompt-gen-btn" style="flex:2" onclick="submitAddTag()">💾 添加标签</button>
-            <button class="prompt-copy-btn" style="flex:1;justify-content:center;padding:8px;font-size:0.78rem;border-radius:10px" onclick="document.getElementById(&#39;pm-tag-add-form&#39;).style.display=&#39;none&#39;">取消</button>
-          </div>
-        </div>
-      </div>
-      <div class="prompt-result-section" id="pm-result-box" style="display:none">
+            <div class="prompt-result-section" id="pm-result-box" style="display:none">
         <div class="prompt-card">
           <div class="prompt-card-header">
             <span class="prompt-card-title">📝 画面场景小传</span>
@@ -3901,74 +3598,7 @@ function refreshChatContext() {
   fetchChatContextPreview();
 }
 var vbDataCache = {};
-var selectedTags = [];
-var tagLib = [];
-function toggleTagLib() {
-  var el = document.getElementById("pm-tag-lib");
-  if (!el) return;
-  var show = el.style.display === "none";
-  el.style.display = show ? "block" : "none";
-  if (show) loadTagLib();
-}
-function loadTagLib() {
-  fetch("/api/tag-lib").then(function(r) { return r.json(); }).then(function(d) {
-    tagLib = (d && d.categories) || [];
-    renderTagLib();
-  }).catch(function() {});
-}
-function renderTagLib() {
-  var el = document.getElementById("pm-tag-lib");
-  var cnt = document.getElementById("pm-tag-count");
-  if (!el) return;
-  if (cnt) cnt.textContent = tagLib.length + " 类";
-  var html = "";
-  tagLib.forEach(function(cat) {
-    html += '<div style="font-size:0.72rem;font-weight:700;color:#be185d;margin:6px 0 3px">' + esc(cat.name || "") + '</div>';
-    (cat.subcategories || []).forEach(function(sub) {
-      var chips = (sub.tags || []).map(function(t) {
-        var sel = selectedTags.indexOf(t.en) >= 0 ? " tag-chip-on" : "";
-        return '<span class="tag-chip' + sel + '" onclick="toggleTagChip(&#39;' + esc(t.en).replace(/'/g, "\'") + '&#39;)" title="' + esc(t.zh || "") + '">' + esc(t.en) + '</span>';
-      }).join("");
-      if (chips) html += '<div style="font-size:0.63rem;color:#c084a8;margin:2px 0 1px">' + esc(sub.name || "") + '</div><div>' + chips + '</div>';
-    });
-  });
-  el.innerHTML = html || '<div style="font-size:0.7rem;color:#c084a8;padding:6px">标签库为空，点右上角「＋ 添加」添加标签</div>';
-}
-function toggleTagChip(en) {
-  var i = selectedTags.indexOf(en);
-  if (i >= 0) selectedTags.splice(i, 1); else selectedTags.push(en);
-  renderTagLib();
-  renderTagSelected();
-}
-function renderTagSelected() {
-  var box = document.getElementById("pm-tag-selected");
-  var chips = document.getElementById("pm-tag-selected-chips");
-  if (!box || !chips) return;
-  if (!selectedTags.length) { box.style.display = "none"; return; }
-  box.style.display = "block";
-  chips.innerHTML = selectedTags.map(function(en) {
-    return '<span class="tag-chip tag-chip-on" onclick="toggleTagChip(&#39;' + esc(en).replace(/'/g, "\'") + '&#39;)">' + esc(en) + ' ✕</span>';
-  }).join("");
-}
-function clearSelectedTags() { selectedTags = []; renderTagLib(); renderTagSelected(); }
-function showAddTagForm() { document.getElementById("pm-tag-add-form").style.display = "block"; }
-function submitAddTag() {
-  var cat = document.getElementById("pm-tag-add-cat").value.trim();
-  var sub = document.getElementById("pm-tag-add-sub").value.trim();
-  var en = document.getElementById("pm-tag-add-en").value.trim();
-  var zh = document.getElementById("pm-tag-add-zh").value.trim();
-  if (!cat || !sub || !en) { showToast("分类/子类/英文标签不能为空", "error"); return; }
-  fetch("/api/tag-lib/add", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({category: cat, subcategory: sub, en: en, zh: zh})})
-    .then(function(r) { return r.json(); }).then(function(d) {
-      showToast(d.msg || (d.ok ? "已添加" : "添加失败"), d.ok ? "success" : "error");
-      if (d.ok) {
-        document.getElementById("pm-tag-add-form").style.display = "none";
-        document.getElementById("pm-tag-add-en").value = "";
-        document.getElementById("pm-tag-add-zh").value = "";
-        loadTagLib();
-      }
-    }).catch(function(e) { showToast("请求失败: " + e.message, "error"); });
-}
+
 function renderVbSection() {
   var view = document.getElementById("pm-vb-view");
   var modEl = document.getElementById("pm-vb-modified");
@@ -4049,8 +3679,6 @@ function switchPromptBot(botIndex) {
   if (resultBox) resultBox.style.display = "none";
   fetchChatContextPreview();
   renderVbSection();
-  selectedTags = [];
-  renderTagSelected();
 }
 
 function executeGeneratePrompt() {
@@ -4069,8 +3697,7 @@ function executeGeneratePrompt() {
     body: JSON.stringify({
       bot: currentPromptBot,
       context: customCtx,
-      style: "novelai",
-      extra_tags: selectedTags.join(", ")
+      style: "novelai"
     })
   })
   .then(function(r) { return r.json(); })
@@ -4489,12 +4116,6 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"ok": True, "benchmarks": _get_visual_benchmarks_payload()}, ensure_ascii=False).encode())
             return
-        if self.path == "/api/tag-lib":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(json.dumps({"ok": True, "categories": _load_tag_lib().get("categories", [])}, ensure_ascii=False).encode())
-            return
         if self.path.startswith("/api/generate-prompt") or self.path.startswith("/api/chat/generate-prompt"):
             qs = self.path.split("?", 1)[1] if "?" in self.path else ""
             from urllib.parse import parse_qs
@@ -4807,90 +4428,13 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
-        elif self.path == "/api/tag-lib/add":
-            try:
-                req = json.loads(body) if body else {}
-                category = (req.get("category") or "").strip()
-                subcategory = (req.get("subcategory") or "").strip()
-                en = (req.get("en") or "").strip()
-                zh = (req.get("zh") or "").strip()
-                if not (category and subcategory and en):
-                    ok, msg = False, "分类/子类/英文标签不能为空"
-                else:
-                    ok, msg = _tag_lib_add(category, subcategory, en, zh)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": ok, "msg": msg}, ensure_ascii=False).encode())
-            except Exception as e:
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
-        elif self.path == "/api/tag-lib/import":
-            try:
-                req = json.loads(body) if body else {}
-                data = req.get("data") or req
-                imported = 0
-                cats = data.get("categories", []) if isinstance(data, dict) else data
-                if not isinstance(cats, list):
-                    cats = []
-                for cat in cats:
-                    cname = (cat.get("name") or "自定义").strip()
-                    subs = cat.get("subcategories") or [{"name": "通用", "tags": cat.get("tags", [])}]
-                    for sub in subs:
-                        sname = (sub.get("name") or "通用").strip()
-                        for t in sub.get("tags", []) or []:
-                            if isinstance(t, str):
-                                en, zh = t, ""
-                            else:
-                                en = (t.get("en") or "").strip()
-                                zh = (t.get("zh") or "").strip()
-                            if en:
-                                ok, _ = _tag_lib_add(cname, sname, en, zh)
-                                if ok:
-                                    imported += 1
-                # 兼容魔导书 history/presets 的 tags 数组格式
-                tags_arr = data.get("tags", []) if isinstance(data, dict) else []
-                if isinstance(tags_arr, list):
-                    for t in tags_arr:
-                        if isinstance(t, str) and t.strip():
-                            ok, _ = _tag_lib_add("自定义", "通用", t.strip(), "")
-                            if ok:
-                                imported += 1
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": True, "msg": f"导入完成，新增 {imported} 个标签"}, ensure_ascii=False).encode())
-            except Exception as e:
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
-        elif self.path == "/api/tag-lib/delete":
-            try:
-                req = json.loads(body) if body else {}
-                category = (req.get("category") or "").strip()
-                subcategory = (req.get("subcategory") or "").strip()
-                en = (req.get("en") or "").strip()
-                ok, msg = _tag_lib_delete(category, subcategory, en)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": ok, "msg": msg}, ensure_ascii=False).encode())
-            except Exception as e:
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
         elif self.path in ("/api/generate-prompt", "/api/chat/generate-prompt"):
             try:
                 req = json.loads(body) if body else {}
                 bot = req.get("bot", 1)
                 context = req.get("context", "")
                 style = req.get("style", "novelai")
-                extra_tags = req.get("extra_tags", "")
-                res = generate_scene_prompt(bot, custom_context=context, style=style, extra_tags=extra_tags)
+                res = generate_scene_prompt(bot, custom_context=context, style=style)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()

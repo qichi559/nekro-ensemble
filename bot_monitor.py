@@ -1520,11 +1520,9 @@ def _get_group_llm(group_name):
         log(f"get_group_llm error: {e}")
     return None, None, None
 
-def get_recent_chat_history(bot_index, limit=8, variety=True):
-    """获取指定 Bot 的聊天上下文用于生图提炼。
+def get_recent_chat_history(bot_index, limit=10):
+    """获取指定 Bot 最近的最新聊天记录（按时间最新连续取 limit 条，过滤系统消息/记忆指令/情感标签）。
 
-    variety=True 时做「跨时段分层采样」：最近 limit//2 条紧跟当前剧情 + 更早时段均匀抽样
-    limit - limit//2 条，内容去重，让生成画面更多样、更有新意。
     （优先从 PostgreSQL 数据库直读，失败则 fallback 到 Bridge）
     """
     try:
@@ -1538,12 +1536,11 @@ def get_recent_chat_history(bot_index, limit=8, variety=True):
     try:
         pg = get_pg_container(idx)
         if pg:
-            sql = f"SELECT sender_name, content_text FROM chat_message WHERE is_recalled = false AND sender_name != 'SYSTEM' AND content_text != '' ORDER BY id DESC LIMIT 150;"
+            sql = f"SELECT sender_name, content_text FROM chat_message WHERE is_recalled = false AND sender_name != 'SYSTEM' AND content_text != '' ORDER BY id DESC LIMIT {max(limit * 2, 50)};"
             cmd = f'docker exec {pg} psql -U nekro_agent -d nekro_agent -t -A -F "|||" -c "{sql}"'
             res = run_cmd(cmd, timeout=5)
             if res:
                 lines = []
-                seen = set()
                 emo_re = re.compile(r'\[\[emotion:[^\]\[]*\]\]|\[\[emotion:[^\n\]\[]*')
                 for raw in reversed(res.strip().split('\n')):
                     if not raw or "|||" not in raw:
@@ -1555,15 +1552,10 @@ def get_recent_chat_history(bot_index, limit=8, variety=True):
                     content = emo_re.sub('', content).strip()
                     if content.startswith(('[记忆]', 'set_note', '```', 'True', 'False', '{', '[')):
                         continue
-                    if not content:
-                        continue
-                    dedup_key = content[:60]
-                    if dedup_key in seen:
-                        continue
-                    seen.add(dedup_key)
-                    lines.append(f"{sender}: {content}")
+                    if content:
+                        lines.append(f"{sender}: {content}")
                 if lines:
-                    return _sample_chat_lines(lines, limit, variety)
+                    return "\n".join(lines[-limit:])
     except Exception as e:
         log(f"get_recent_chat_history from pg failed: {e}")
 
@@ -1581,24 +1573,6 @@ def get_recent_chat_history(bot_index, limit=8, variety=True):
 
     return ""
 
-def _sample_chat_lines(lines, limit, variety=True):
-    """跨时段分层采样：最新的紧跟剧情，更早的均匀抽样，保证多样性。lines 需按时间正序。"""
-    if not lines:
-        return ""
-    if not variety or len(lines) <= limit:
-        return "\n".join(lines[-limit:])
-    n_latest = max(2, limit // 2)
-    n_older = limit - n_latest
-    latest = lines[-n_latest:]
-    older = lines[:-n_latest]
-    sampled = []
-    if older and n_older > 0:
-        step = len(older) / n_older
-        for i in range(n_older):
-            sampled.append(older[min(len(older) - 1, int(i * step))])
-    # 老的在前，新的在后，保持时间顺序
-    return "\n".join(sampled + latest)
-
 def generate_scene_prompt(bot_index, custom_context="", style="novelai"):
     """根据聊天上下文与人设外貌生成生图 Prompt"""
     try:
@@ -1613,7 +1587,7 @@ def generate_scene_prompt(bot_index, custom_context="", style="novelai"):
 
     chat_text = ""
     if not custom_context:
-        chat_text = get_recent_chat_history(idx, limit=12)
+        chat_text = get_recent_chat_history(idx, limit=10)
     else:
         chat_text = custom_context.strip()
 
@@ -1627,9 +1601,8 @@ Your mission is to analyze the given character base appearance and the RECENT CH
 
 IMPORTANT RULES:
 1. HIGHEST PRIORITY - CHAT DYNAMICS: The characters' real-time actions, poses, physical touches, emotional state, facial expressions, and clothing state (e.g. Disheveled, blushing, undressing, kissing, sitting, embracing) MUST be strictly derived from the RECENT CHAT CONTEXT. Do NOT invent unrelated scenes or revert to default backgrounds if the chat context indicates specific actions or interactions.
-2. CONTEXT IS A TIME-SAMPLED MIX: The chat context contains fragments from DIFFERENT TIME PERIODS (latest moments plus earlier representative moments). Pick the most vivid, dramatic, and visually striking interaction among them as the scene focus — do not just blindly follow the first/last message. If multiple fragments share a similar mood, prefer the one with the strongest action and emotional contrast to keep the image fresh and varied.
 3. If generating for 爱弥斯 (Aemeath), you MUST strictly include the official character tag 'aemeath_(wuthering_waves)' as the first character tag right after '1girl, solo' (e.g. 'masterpiece, best quality, ultra-detailed, anime artwork, aemeath_(wuthering_waves), 1girl, solo focus, ...').
-4. Maintain high consistency with the character benchmark tags while adapting outfits, poses, micro-expressions and scenery to match the chat context.
+3. Maintain high consistency with the character benchmark tags while adapting outfits, poses, micro-expressions and scenery to match the chat context.
 
 Output strictly valid JSON:
 {{
@@ -4461,7 +4434,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             try:
                 req = json.loads(body) if body else {}
                 bot = req.get("bot", 1)
-                ctx = get_recent_chat_history(bot, limit=8)
+                ctx = get_recent_chat_history(bot, limit=10)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()

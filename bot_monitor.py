@@ -116,7 +116,7 @@ def get_bot_data_dir(bot_index):
         pass
     return ""
 
-MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context", "/api/visual-benchmarks", "/api/visual-benchmarks/reset"}
+MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/test-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context", "/api/visual-benchmarks", "/api/visual-benchmarks/reset"}
 
 def is_monitor_route(path):
     if path in MONITOR_API_ROUTES:
@@ -1502,6 +1502,23 @@ def _get_candidate_llms_for_prompt():
     except Exception as e:
         log(f"get_candidate_llms_for_prompt error: {e}")
     return candidates
+
+def _get_group_llm(group_name):
+    """按模型组名读取 LLM 配置，返回 (base_url, api_key, model)；配置缺失或非 chat 类型返回 (None, None, None)"""
+    try:
+        dd = get_bot_data_dir(1)
+        if dd:
+            p = os.path.join(dd, "configs", "nekro-agent.yaml")
+            if os.path.exists(p):
+                import yaml
+                with open(p, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f)
+                g = cfg.get("MODEL_GROUPS", {}).get(group_name, {})
+                if g.get("MODEL_TYPE") == "chat" and g.get("CHAT_MODEL") and g.get("BASE_URL") and g.get("API_KEY"):
+                    return g.get("BASE_URL", "").rstrip("/"), g.get("API_KEY", ""), g.get("CHAT_MODEL", "")
+    except Exception as e:
+        log(f"get_group_llm error: {e}")
+    return None, None, None
 
 def get_recent_chat_history(bot_index, limit=8):
     """获取指定 Bot 的最近聊天记录（优先从 PostgreSQL 数据库直读，确保包含 QQ 私聊/群聊与 WebUI 全量真实对话；失败则 fallback 到 Bridge）"""
@@ -3092,6 +3109,9 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
 .model-btn-add:hover{box-shadow:0 6px 20px rgba(139,92,246,.5);transform:translateY(-1px)}
 .model-btn-del{background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;box-shadow:0 4px 14px rgba(244,63,94,.3)}
 .model-btn-del:hover{box-shadow:0 6px 20px rgba(244,63,94,.5);transform:translateY(-1px)}
+.model-btn-test{background:linear-gradient(135deg,#06b6d4,#0284c7);color:#fff;box-shadow:0 4px 14px rgba(6,182,212,.3)}
+.model-btn-test:hover{box-shadow:0 6px 20px rgba(6,182,212,.5);transform:translateY(-1px)}
+.model-btn-test:disabled{opacity:.55;cursor:wait;transform:none;box-shadow:none}
 .model-btn-plain{background:rgba(100,100,110,.12);color:#9d174d;border:1px solid rgba(157,23,77,.2)}
 .model-btn-plain:hover{background:rgba(100,100,110,.2)}
 .model-btn-ok{background:linear-gradient(135deg,#10b981,#059669);color:#fff;box-shadow:0 4px 14px rgba(16,185,129,.3)}
@@ -3332,7 +3352,7 @@ function setSectionHealth(id,healthy){var el=document.getElementById(id);if(!el)
 function renderSystem(sys){var memPct=parseFloat(sys.mem_pct);var memClass=isNaN(memPct)?"":(memPct<50?"":memPct<80?"warn":"danger");document.getElementById("sys-bar").innerHTML='<div class="sys-item"><div class="sys-label">服务器时间</div><div class="sys-value">'+esc(sys.time)+'</div></div><div class="sys-item"><div class="sys-label">CPU</div><div class="sys-value">'+esc(sys.cpu)+'</div></div><div class="sys-item"><div class="sys-label">内存</div><div class="sys-value '+memClass+'">'+esc(sys.mem)+' ('+esc(sys.mem_pct)+')</div></div><div class="sys-item"><div class="sys-label">磁盘</div><div class="sys-value">'+esc(sys.disk)+'</div></div>'}
 function renderBot(bot,index){var statusClass=bot.online===true?"online":bot.online===false?"offline":"unknown";var statusBadge=bot.online===true?"status-online":bot.online===false?"status-offline":"status-unknown";var napcatMemPct=(bot.napcat_stats.mem_pct||"").replace("%","").trim();var nekroMemPct=(bot.nekro_stats.mem_pct||"").replace("%","").trim();var connClass=bot.nekro_conn==="已连接"?"green":bot.nekro_conn==="已断开"?"red":"yellow";var napcatC=esc(bot.napcat_container);var nekroC=esc(bot.nekro_container);var html="";var avatarUrl=avUrl(esc(bot.qq),640);html+='<div class="bot-card '+statusClass+'">';html+='<div class="card-header"><div class="card-header-left"><img class="bot-avatar" src="'+avatarUrl+'" onerror="this.style.display=\'none\'"><div><span class="bot-name">'+esc(bot.preset_name||bot.role)+'</span><span class="status-badge '+statusBadge+'">'+esc(bot.online_msg)+'</span></div></div><div class="card-header-right"><a href="/chat?bot='+(index+1)+'" target="_blank" class="main-btn main-btn-chat">💬 聊天</a><button onclick="openPromptModal('+(index+1)+')" class="main-btn main-btn-prompt"><span class="btn-txt-full">🎨 生图Prompt</span><span class="btn-txt-short">🎨 生图</span></button></div></div>';html+='<div class="bot-sub open" id="bs-mon-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-mon-'+index+'\')"><span>监控</span><span class="bot-sub-arrow">▾</span></div><div class="bot-sub-b">';html+='<div class="info-section"><div class="section-title">NapCat</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.napcat_running?"green":"red")+'">'+(bot.napcat_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.napcat_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(napcatMemPct)+'">'+esc(bot.napcat_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(napcatMemPct)+'" style="width:'+(napcatMemPct||0)+'%"></div></div></div>';html+='<div class="info-section"><div class="section-title">NekroAgent</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.nekro_running?"green":"red")+'">'+(bot.nekro_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">OneBot</span><span class="value '+connClass+'">'+esc(bot.nekro_conn)+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.nekro_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(nekroMemPct)+'">'+esc(bot.nekro_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(nekroMemPct)+'" style="width:'+(nekroMemPct||0)+'%"></div></div></div>';var kickOn=bot.kick_restart!==false;html+='<div class="guard-toggle"><span class="guard-label">踢下线自动重启NapCat</span><div class="guard-switch'+(kickOn?" on":"")+'" onclick="toggleKickRestart('+index+',this)"></div></div>';var voiceOn=voiceSwitchStates[index]!==false;html+='<div class="guard-toggle"><span class="guard-label">QQ 语音回复</span><div class="guard-switch'+(voiceOn?" on":"")+'" id="voice-switch-'+index+'" onclick="toggleVoiceSwitch('+index+',this)"></div></div>';html+='<div style="margin-top:6px"><a href="'+esc(bot.napcat_url)+'" target="_blank" class="main-btn main-btn-napcat">NapCat</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+napcatC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+napcatC+'\',\'restart\')">重启</button>';if(bot.napcat_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+napcatC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+napcatC+'\',\'start\')">启动</button>';html+='</div></div>';html+='<div style="margin-top:6px"><a href="javascript:void(0)" onclick="openNekro('+index+')" class="main-btn main-btn-nekro">NekroAgent</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+nekroC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+nekroC+'\',\'restart\')">重启</button>';if(bot.nekro_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+nekroC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+nekroC+'\',\'start\')">启动</button>';html+='</div></div>';html+='</div></div>';html+='<div class="bot-sub" id="bs-br-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-br-'+index+'\')"><span>桥接</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-br-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-tts-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-tts-'+index+'\')"><span>音色</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-tts-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-note-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-note-'+index+'\')"><span>笔记</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-note-b-'+index+'"></div></div>';if(index===DEVICE_BOT_INDEX){html+='<div class="bot-sub" id="bs-dev-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-dev-'+index+'\')"><span>设备</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-dev-b-'+index+'"></div></div>'}html+='</div>';return html}
 
-function loadModelGroups(){fetch("/api/model-presets").then(function(r){return r.json()}).then(function(d){modelGroups=d.groups||[];currentModel=d.current||"unknown";selectedModel=currentModel;_renderModelCard()}).catch(function(){})}function _renderModelCard(){var el=document.getElementById("model-section");if(!el)return;if(!modelGroups||!modelGroups.length){setSummary("summary-model","未配置");el.innerHTML='<div class="model-card"><div class="model-tip">暂无可用模型组，请先添加</div><div class="model-btns"><button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加模型组</button></div></div>';return}var cur=null;(modelGroups||[]).forEach(function(g){if(g.group_name===currentModel)cur=g});setSummary("summary-model",cur?cur.pretty:currentModel);var opts=(modelGroups||[]).map(function(g){var tip=[g.chat_model,g.base_url?g.base_url.replace(/^https?:\/\//,"").replace(/\/+$/,""):null].filter(Boolean).join(" · ");var sel=(g.group_name===(selectedModel||currentModel))?" selected":"";return '<option value="'+esc(g.group_name)+'"'+sel+' title="'+esc(tip)+'">'+esc(g.pretty||g.group_name)+'</option>'}).join("");var pending=selectedModel&&selectedModel!==currentModel;var applyBtn=pending?'<button class="model-btn model-btn-switch" id="model-apply-btn" onclick="applySelectedModel()">⚡ 应用</button>':'';el.innerHTML='<div class="model-card"><select class="model-select" id="model-select" onchange="selectModel(this.value)">'+opts+'</select><div class="model-btns">'+applyBtn+'<button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加</button><button class="model-btn model-btn-del" onclick="deleteCurrentModelGroup()">－ 删除</button></div></div>'}
+function loadModelGroups(){fetch("/api/model-presets").then(function(r){return r.json()}).then(function(d){modelGroups=d.groups||[];currentModel=d.current||"unknown";selectedModel=currentModel;_renderModelCard()}).catch(function(){})}function _renderModelCard(){var el=document.getElementById("model-section");if(!el)return;if(!modelGroups||!modelGroups.length){setSummary("summary-model","未配置");el.innerHTML='<div class="model-card"><div class="model-tip">暂无可用模型组，请先添加</div><div class="model-btns"><button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加模型组</button></div></div>';return}var cur=null;(modelGroups||[]).forEach(function(g){if(g.group_name===currentModel)cur=g});setSummary("summary-model",cur?cur.pretty:currentModel);var opts=(modelGroups||[]).map(function(g){var tip=[g.chat_model,g.base_url?g.base_url.replace(/^https?:\/\//,"").replace(/\/+$/,""):null].filter(Boolean).join(" · ");var sel=(g.group_name===(selectedModel||currentModel))?" selected":"";return '<option value="'+esc(g.group_name)+'"'+sel+' title="'+esc(tip)+'">'+esc(g.pretty||g.group_name)+'</option>'}).join("");var pending=selectedModel&&selectedModel!==currentModel;var applyBtn=pending?'<button class="model-btn model-btn-switch" id="model-apply-btn" onclick="applySelectedModel()">⚡ 应用</button>':'';el.innerHTML='<div class="model-card"><select class="model-select" id="model-select" onchange="selectModel(this.value)">'+opts+'</select><div class="model-btns">'+applyBtn+'<button class="model-btn model-btn-test" id="model-test-btn" onclick="testModelConnection()">🔌 测试</button><button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加</button><button class="model-btn model-btn-del" onclick="deleteCurrentModelGroup()">－ 删除</button></div></div>'}
 function render(data){if(data.error&&(!data.bots||data.bots.length===0)){showError(data.error);return}document.getElementById("pulse-dot").className="pulse";document.getElementById("last-update").textContent="更新于 "+(data.system?data.system.time:"?");if(data.error){document.getElementById("error-box").innerHTML='<div class="warn-msg">部分异常: '+esc(data.error)+'</div>'}else{document.getElementById("error-box").innerHTML=''}if(data.system){renderSystem(data.system);setSummary("summary-sys","CPU "+esc(data.system.cpu)+" | 内存 "+esc(data.system.mem));var sysMemPct=parseFloat(data.system.mem_pct);setSectionHealth("sec-sys",isNaN(sysMemPct)||sysMemPct<80)}if(data.bots&&data.bots.length>0){document.getElementById("bots-grid").innerHTML=data.bots.map(renderBot).join("");var onlineCount=data.bots.filter(function(b){return b.online===true}).length;setSummary("summary-bots",onlineCount+"/"+data.bots.length+" 在线");setSectionHealth("sec-bots",onlineCount===data.bots.length);data.bots.forEach(function(b,i){fillBotExtras(b,i,data.note_sync)})}else{document.getElementById("bots-grid").innerHTML='<div style="color:#c084a8;text-align:center;padding:40px">暂无数据</div>';setSummary("summary-bots","0/0 在线");setSectionHealth("sec-bots",false)}renderDevice(data.device);renderNavLinks(data.extra_nav);loadVoiceSwitch();setSectionHealth("sec-nav",true)}
 function loadData(){try{avatarTs=Date.now();fetch("/api/status").then(function(res){if(!res.ok)throw new Error("HTTP "+res.status);return res.json()}).then(function(data){render(data)}).catch(function(err){showError("请求失败: "+err.message)})}catch(e){showError("JS异常: "+e.message)}}
 function manualRefresh(){var btn=document.getElementById("refresh-btn");btn.disabled=true;btn.textContent="刷新中...";fetch("/api/refresh").then(function(){setTimeout(function(){loadData();btn.disabled=false;btn.textContent="刷新"},1000)}).catch(function(){btn.disabled=false;btn.textContent="刷新";loadData()})}
@@ -3360,6 +3380,24 @@ function toggleLLMMode(){if(!confirm("确认切换小智LLM模式？\n\n切换�
 var modelGroups=[];var currentModel="";var selectedModel="";
 function selectModel(name){if(!name)return;selectedModel=name;_renderModelCard()}
 function applySelectedModel(){var name=selectedModel||(document.getElementById("model-select")?document.getElementById("model-select").value:"");if(!name)return;switchModel(name)}
+function testModelConnection(){
+  var gname=selectedModel||currentModel;
+  if(!gname){showToast("没有可测试的模型组","error");return}
+  var btn=document.getElementById("model-test-btn");
+  var old=btn?btn.textContent:"🔌 测试";
+  if(btn){btn.disabled=true;btn.textContent="⏳ 测试中..."}
+  fetch("/api/test-model",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_name:gname})})
+    .then(function(r){return r.json()})
+    .then(function(d){
+      if(btn){btn.disabled=false;btn.textContent=old}
+      if(d&&d.ok){showToast("✅ "+d.msg,"success")}
+      else{showToast("❌ "+(d&&d.msg||"测试失败"),"error")}
+    })
+    .catch(function(e){
+      if(btn){btn.disabled=false;btn.textContent=old}
+      showToast("❌ 请求失败: "+e.message,"error")
+    })
+}
 function switchModel(name){if(!name)return;var p=null;(modelGroups||[]).forEach(function(g){if(g.group_name===name)p=g});if(!p){showToast("未找到模型组: "+name,"error");return}currentModel=p.group_name;selectedModel=name;_renderModelCard();showToast("正在切换至 "+p.pretty+" ...","");fetch("/api/apply-model",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_name:p.group_name,chat_model:p.chat_model,base_url:p.base_url,api_key:p.api_key})}).then(function(r){return r.json()}).then(function(d){showToast(d.msg,d.ok?"success":"error");if(d.ok)loadModelGroups()}).catch(function(e){showToast("请求失败:"+e.message,"error");loadModelGroups()})}
 var _addCtx={};
 function openAddGroupModal(){document.getElementById("add-group-modal").classList.add("active");document.getElementById("addg-name").value="";document.getElementById("addg-url").value="";document.getElementById("addg-key").value="";document.getElementById("addg-model-field").style.display="none";document.getElementById("addg-model").innerHTML="";document.getElementById("addg-confirm-btn").style.display="none";document.getElementById("addg-fetch-btn").style.display="";document.getElementById("addg-status").textContent="";setTimeout(function(){document.getElementById("addg-name").focus()},100)}
@@ -4490,6 +4528,53 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
+        elif self.path == "/api/test-model":
+            try:
+                req = json.loads(body) if body else {}
+                group_name = (req.get("group_name") or "").strip()
+                if not group_name:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"ok": False, "msg": "模型组名不能为空"}, ensure_ascii=False).encode())
+                    return
+                base_url, api_key, model = _get_group_llm(group_name)
+                if not (base_url and api_key and model):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"ok": False, "msg": "模型组配置不完整或不是 chat 类型"}, ensure_ascii=False).encode())
+                    return
+                t0 = time.time()
+                test_payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 5,
+                    "temperature": 0
+                }
+                test_req = urllib.request.Request(
+                    f"{base_url}/chat/completions",
+                    data=json.dumps(test_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+                )
+                with urllib.request.urlopen(test_req, timeout=20) as resp:
+                    res = json.loads(resp.read().decode("utf-8"))
+                    reply = (res.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()[:40]
+                cost = round(time.time() - t0, 2)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "msg": f"连接正常 · 延迟 {cost}s · 模型回复: {reply}"}, ensure_ascii=False).encode())
+            except urllib.error.HTTPError as e:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "msg": f"HTTP {e.code} {e.reason}"}, ensure_ascii=False).encode())
+            except Exception as e:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "msg": f"连接失败: {e}"}, ensure_ascii=False).encode())
         elif self.path == "/api/apply-model":
             try:
                 req = json.loads(body) if body else {}

@@ -116,7 +116,7 @@ def get_bot_data_dir(bot_index):
         pass
     return ""
 
-MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/test-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context", "/api/visual-benchmarks", "/api/visual-benchmarks/reset"}
+MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/test-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context", "/api/generate-portrait", "/api/visual-benchmarks", "/api/visual-benchmarks/reset"}
 
 def is_monitor_route(path):
     if path in MONITOR_API_ROUTES:
@@ -1536,7 +1536,7 @@ def get_recent_chat_history(bot_index, limit=10):
     try:
         pg = get_pg_container(idx)
         if pg:
-            sql = f"SELECT sender_name, content_text FROM chat_message WHERE is_recalled = false AND sender_name != 'SYSTEM' AND content_text != '' ORDER BY id DESC LIMIT {max(limit * 2, 50)};"
+            sql = f"SELECT sender_name, replace(replace(content_text, chr(10), ' '), chr(13), ' ') FROM chat_message WHERE is_recalled = false AND sender_name != 'SYSTEM' AND content_text != '' ORDER BY id DESC LIMIT {max(limit * 2, 50)};"
             cmd = f'docker exec {pg} psql -U nekro_agent -d nekro_agent -t -A -F "|||" -c "{sql}"'
             res = run_cmd(cmd, timeout=5)
             if res:
@@ -1696,6 +1696,70 @@ Output strictly valid JSON:
         "nai_url": "https://nai.sta1n.cn/"
     }
 
+
+
+def generate_portrait_prompt(bot_index, composition="bust", mood="", style="novelai"):
+    """角色立绘模式：不依赖聊天，直接用外貌基准 + 构图预设 + 可选氛围词生成标准形象图 Prompt"""
+    try:
+        idx = int(bot_index)
+        if not (1 <= idx <= len(BOTS)):
+            idx = 1
+    except Exception:
+        idx = 1
+
+    benchmark = _get_visual_benchmarks().get(str(idx), _get_visual_benchmarks()["1"])
+    preset_name = get_bot_preset_name(idx) or benchmark["name"]
+
+    comp_map = {
+        "portrait": {"tag": "portrait, head and shoulders, close-up, upper body", "zh": "头像特写"},
+        "bust": {"tag": "bust shot, upper body, looking at viewer", "zh": "半身立绘"},
+        "full": {"tag": "full body, standing, solo focus, full body shot", "zh": "全身立绘"},
+    }
+    comp = comp_map.get((composition or "bust").lower(), comp_map["bust"])
+    mood = (mood or "").strip()
+
+    # 组合正向词：基准 + 干净背景 + 构图 + 氛围
+    pos_parts = [p.strip() for p in benchmark["fallback_positive"].split(",")]
+    seen = set()
+    pos = []
+    for p in pos_parts:
+        if p and p.lower() not in seen:
+            seen.add(p.lower())
+            pos.append(p)
+    extra = ["simple background", "plain background", comp["tag"]]
+    if mood:
+        extra.append(mood)
+    for e in extra:
+        if e and e.lower() not in seen:
+            seen.add(e.lower())
+            pos.append(e)
+    pos_prompt = ", ".join(pos)
+
+    # 爱弥斯强制官方 tag
+    if idx == 3 or "爱弥斯" in preset_name or "爱弥斯" in benchmark.get("name", ""):
+        if "aemeath_(wuthering_waves)" not in pos_prompt.lower():
+            pos_prompt = pos_prompt.replace("1girl", "aemeath_(wuthering_waves), 1girl", 1) if "1girl" in pos_prompt else "aemeath_(wuthering_waves), " + pos_prompt
+
+    summary = f"{preset_name}的{comp['zh']}" + (f"，氛围：{mood}" if mood else "") + f"。以{benchmark['role']}基准外貌呈现，背景干净简洁，突出角色本身。"
+
+    return {
+        "ok": True,
+        "is_portrait": True,
+        "character_name": preset_name,
+        "role": benchmark["role"],
+        "used_context": f"【{comp['zh']}模式】构图:{comp['tag']}" + (f" · 氛围:{mood}" if mood else ""),
+        "scene_summary": summary,
+        "positive_prompt": pos_prompt,
+        "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, bad proportions, disfigured, multiple views, reference sheet, out of frame, extra limbs, deformed hands, long body, malformed limbs, bad feet, fused fingers, disfigured hands, missing arms",
+        "parameters": {
+            "model": "NovelAI Diffusion V3 (Anime)",
+            "resolution": "832x1216" if composition != "portrait" else "1024x1024",
+            "steps": 28,
+            "scale": 5.5,
+            "sampler": "Euler Ancestral"
+        },
+        "nai_url": "https://nai.sta1n.cn/"
+    }
 
 def _replace_llm_in_config(new_value):
     """用Python直接读写.config.yaml，替换selected_module下的LLM值。
@@ -2128,6 +2192,10 @@ body{
   background:linear-gradient(135deg,rgba(236,72,153,0.35),rgba(168,85,247,0.35));
   color:#fff;box-shadow:0 2px 10px rgba(236,72,153,0.3);border:1px solid rgba(244,114,182,0.4);
 }
+.prompt-mode-tabs{display:flex;gap:8px;margin-bottom:10px}
+.prompt-mode-tab{flex:1;padding:7px 10px;border-radius:10px;text-align:center;font-size:0.8rem;font-weight:600;color:#c084a8;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(244,114,182,0.15);background:rgba(244,114,182,0.06)}
+.prompt-mode-tab.active{background:linear-gradient(135deg,rgba(236,72,153,0.35),rgba(168,85,247,0.35));color:#fff;border:1px solid rgba(244,114,182,0.4)}
+
 .prompt-ctx-box{display:flex;flex-direction:column;gap:6px}
 .prompt-ctx-label{font-size:0.75rem;color:#c084a8;display:flex;justify-content:space-between}
 .prompt-ctx-input{
@@ -2466,12 +2534,26 @@ document.getElementById("messages").addEventListener("scroll",function(){
         <button class="prompt-bot-tab" onclick="switchPromptBot(2)">🌙 霁月</button>
         <button class="prompt-bot-tab" onclick="switchPromptBot(3)">✨ 爱弥斯</button>
       </div>
-      <div class="prompt-ctx-box">
+      <div class="prompt-mode-tabs">
+        <button class="prompt-mode-tab active" id="pm-mode-story" onclick="switchPromptMode('story')">🎭 剧情</button>
+        <button class="prompt-mode-tab" id="pm-mode-portrait" onclick="switchPromptMode('portrait')">🧍 立绘</button>
+      </div>
+      <div class="prompt-ctx-box" id="pm-ctx-box">
         <div class="prompt-ctx-label">
           <span>场景/聊天上下文（留空则自动提取最新聊天对话）</span>
           <span style="cursor:pointer;color:#f472b6" onclick="document.getElementById('pm-ctx-input').value='';">清空</span>
         </div>
         <textarea class="prompt-ctx-input" id="pm-ctx-input" placeholder="输入自定义场景描述或关键词...留空则自动读取最新聊天上下文"></textarea>
+      </div>
+      <div id="pm-portrait-box" style="display:none">
+        <div class="prompt-ctx-label"><span>构图</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="prompt-bot-tab" id="pm-comp-portrait" onclick="selectComposition('portrait')">头像</button>
+          <button class="prompt-bot-tab active" id="pm-comp-bust" onclick="selectComposition('bust')">半身</button>
+          <button class="prompt-bot-tab" id="pm-comp-full" onclick="selectComposition('full')">全身</button>
+        </div>
+        <div class="prompt-ctx-label" style="margin-top:8px"><span>氛围描述（可选）</span></div>
+        <input class="prompt-ctx-input" id="pm-mood-input" style="min-height:34px;max-height:34px" placeholder="如：晚风中的回眸 / 樱花树下 / 慵懒的午后">
       </div>
       <button class="prompt-gen-btn" id="pm-gen-btn" onclick="executeGeneratePrompt()">
         <span>✨</span><span id="pm-gen-btn-text">提炼场景生图 Prompt</span>
@@ -2562,6 +2644,8 @@ document.getElementById("messages").addEventListener("scroll",function(){
 var currentPromptBot = 1;
 var lastPromptData = null;
 var promptReqSeq = 0;
+var currentMode = "story";
+var currentComp = "bust";
 
 function openPromptModal(botIndex, prefilledContext) {
   if (botIndex) currentPromptBot = parseInt(botIndex) || 1;
@@ -2631,6 +2715,29 @@ function refreshChatContext() {
   fetchChatContextPreview();
 }
 var vbDataCache = {};
+function switchPromptMode(mode) {
+  currentMode = mode;
+  var st = document.getElementById("pm-mode-story");
+  var pt = document.getElementById("pm-mode-portrait");
+  if (st) st.classList.toggle("active", mode === "story");
+  if (pt) pt.classList.toggle("active", mode === "portrait");
+  var ctxBox = document.getElementById("pm-ctx-box");
+  var portraitBox = document.getElementById("pm-portrait-box");
+  var ctxCard = document.getElementById("pm-context-card");
+  var btnText = document.getElementById("pm-gen-btn-text");
+  if (ctxBox) ctxBox.style.display = mode === "story" ? "block" : "none";
+  if (ctxCard) ctxCard.style.display = mode === "story" ? "block" : "none";
+  if (portraitBox) portraitBox.style.display = mode === "portrait" ? "block" : "none";
+  if (btnText) btnText.textContent = mode === "portrait" ? "🧍 生成立绘 Prompt" : "✨ 提炼场景生图 Prompt";
+  if (mode === "story") { fetchChatContextPreview(); }
+}
+function selectComposition(comp) {
+  currentComp = comp;
+  ["portrait", "bust", "full"].forEach(function(c) {
+    var el = document.getElementById("pm-comp-" + c);
+    if (el) el.classList.toggle("active", c === comp);
+  });
+}
 
 function renderVbSection() {
   var view = document.getElementById("pm-vb-view");
@@ -2724,14 +2831,14 @@ function executeGeneratePrompt() {
   if (btn) btn.disabled = true;
   if (btnText) btnText.textContent = "正在提炼场景与生成 Prompt...";
   
-  fetch("/api/generate-prompt", {
+  var apiUrl = currentMode === "portrait" ? "/api/generate-portrait" : "/api/generate-prompt";
+  var reqBody = currentMode === "portrait"
+    ? {bot: currentPromptBot, composition: currentComp, mood: (document.getElementById("pm-mood-input") || {}).value || "", style: "novelai"}
+    : {bot: currentPromptBot, context: customCtx, style: "novelai"};
+  fetch(apiUrl, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      bot: currentPromptBot,
-      context: customCtx,
-      style: "novelai"
-    })
+    body: JSON.stringify(reqBody)
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
@@ -3187,6 +3294,10 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
   background:linear-gradient(135deg,rgba(236,72,153,0.35),rgba(168,85,247,0.35));
   color:#fff;box-shadow:0 2px 10px rgba(236,72,153,0.3);border:1px solid rgba(244,114,182,0.4);
 }
+.prompt-mode-tabs{display:flex;gap:8px;margin-bottom:10px}
+.prompt-mode-tab{flex:1;padding:7px 10px;border-radius:10px;text-align:center;font-size:0.8rem;font-weight:600;color:#c084a8;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(244,114,182,0.15);background:rgba(244,114,182,0.06)}
+.prompt-mode-tab.active{background:linear-gradient(135deg,rgba(236,72,153,0.35),rgba(168,85,247,0.35));color:#fff;border:1px solid rgba(244,114,182,0.4)}
+
 .prompt-ctx-box{display:flex;flex-direction:column;gap:6px}
 .prompt-ctx-label{font-size:0.75rem;color:#c084a8;display:flex;justify-content:space-between}
 .prompt-ctx-input{
@@ -3451,12 +3562,26 @@ function pad(n){return n<10?"0"+n:n}
         <button class="prompt-bot-tab" onclick="switchPromptBot(2)">🌙 霁月</button>
         <button class="prompt-bot-tab" onclick="switchPromptBot(3)">✨ 爱弥斯</button>
       </div>
-      <div class="prompt-ctx-box">
+      <div class="prompt-mode-tabs">
+        <button class="prompt-mode-tab active" id="pm-mode-story" onclick="switchPromptMode('story')">🎭 剧情</button>
+        <button class="prompt-mode-tab" id="pm-mode-portrait" onclick="switchPromptMode('portrait')">🧍 立绘</button>
+      </div>
+      <div class="prompt-ctx-box" id="pm-ctx-box">
         <div class="prompt-ctx-label">
           <span>场景/聊天上下文（留空则自动提取最新聊天对话）</span>
           <span style="cursor:pointer;color:#f472b6" onclick="document.getElementById('pm-ctx-input').value='';">清空</span>
         </div>
         <textarea class="prompt-ctx-input" id="pm-ctx-input" placeholder="输入自定义场景描述或关键词...留空则自动读取最新聊天上下文"></textarea>
+      </div>
+      <div id="pm-portrait-box" style="display:none">
+        <div class="prompt-ctx-label"><span>构图</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="prompt-bot-tab" id="pm-comp-portrait" onclick="selectComposition('portrait')">头像</button>
+          <button class="prompt-bot-tab active" id="pm-comp-bust" onclick="selectComposition('bust')">半身</button>
+          <button class="prompt-bot-tab" id="pm-comp-full" onclick="selectComposition('full')">全身</button>
+        </div>
+        <div class="prompt-ctx-label" style="margin-top:8px"><span>氛围描述（可选）</span></div>
+        <input class="prompt-ctx-input" id="pm-mood-input" style="min-height:34px;max-height:34px" placeholder="如：晚风中的回眸 / 樱花树下 / 慵懒的午后">
       </div>
       <button class="prompt-gen-btn" id="pm-gen-btn" onclick="executeGeneratePrompt()">
         <span>✨</span><span id="pm-gen-btn-text">提炼场景生图 Prompt</span>
@@ -3547,6 +3672,8 @@ function pad(n){return n<10?"0"+n:n}
 var currentPromptBot = 1;
 var lastPromptData = null;
 var promptReqSeq = 0;
+var currentMode = "story";
+var currentComp = "bust";
 
 function openPromptModal(botIndex, prefilledContext) {
   if (botIndex) currentPromptBot = parseInt(botIndex) || 1;
@@ -3616,6 +3743,29 @@ function refreshChatContext() {
   fetchChatContextPreview();
 }
 var vbDataCache = {};
+function switchPromptMode(mode) {
+  currentMode = mode;
+  var st = document.getElementById("pm-mode-story");
+  var pt = document.getElementById("pm-mode-portrait");
+  if (st) st.classList.toggle("active", mode === "story");
+  if (pt) pt.classList.toggle("active", mode === "portrait");
+  var ctxBox = document.getElementById("pm-ctx-box");
+  var portraitBox = document.getElementById("pm-portrait-box");
+  var ctxCard = document.getElementById("pm-context-card");
+  var btnText = document.getElementById("pm-gen-btn-text");
+  if (ctxBox) ctxBox.style.display = mode === "story" ? "block" : "none";
+  if (ctxCard) ctxCard.style.display = mode === "story" ? "block" : "none";
+  if (portraitBox) portraitBox.style.display = mode === "portrait" ? "block" : "none";
+  if (btnText) btnText.textContent = mode === "portrait" ? "🧍 生成立绘 Prompt" : "✨ 提炼场景生图 Prompt";
+  if (mode === "story") { fetchChatContextPreview(); }
+}
+function selectComposition(comp) {
+  currentComp = comp;
+  ["portrait", "bust", "full"].forEach(function(c) {
+    var el = document.getElementById("pm-comp-" + c);
+    if (el) el.classList.toggle("active", c === comp);
+  });
+}
 
 function renderVbSection() {
   var view = document.getElementById("pm-vb-view");
@@ -3709,14 +3859,14 @@ function executeGeneratePrompt() {
   if (btn) btn.disabled = true;
   if (btnText) btnText.textContent = "正在提炼场景与生成 Prompt...";
   
-  fetch("/api/generate-prompt", {
+  var apiUrl = currentMode === "portrait" ? "/api/generate-portrait" : "/api/generate-prompt";
+  var reqBody = currentMode === "portrait"
+    ? {bot: currentPromptBot, composition: currentComp, mood: (document.getElementById("pm-mood-input") || {}).value || "", style: "novelai"}
+    : {bot: currentPromptBot, context: customCtx, style: "novelai"};
+  fetch(apiUrl, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      bot: currentPromptBot,
-      context: customCtx,
-      style: "novelai"
-    })
+    body: JSON.stringify(reqBody)
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
@@ -4446,6 +4596,23 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
+        elif self.path == "/api/generate-portrait":
+            try:
+                req = json.loads(body) if body else {}
+                bot = req.get("bot", 1)
+                composition = req.get("composition", "bust")
+                mood = req.get("mood", "")
+                style = req.get("style", "novelai")
+                res = generate_portrait_prompt(bot, composition=composition, mood=mood, style=style)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode())
+            except Exception as e:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "msg": f"生成失败: {e}"}, ensure_ascii=False).encode())
         elif self.path in ("/api/generate-prompt", "/api/chat/generate-prompt"):
             try:
                 req = json.loads(body) if body else {}

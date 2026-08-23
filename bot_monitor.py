@@ -2210,7 +2210,7 @@ body{
   border:none;box-shadow:0 4px 12px rgba(236,72,153,.35);
   font-size:0.9rem;padding:10px 20px;border-radius:12px;cursor:pointer;
   font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:all .2s;
-  margin-left:0;line-height:1;white-space:nowrap;width:116px;
+  margin-left:0;line-height:1;white-space:nowrap;width:auto;min-width:100px;
 }
 .main-btn-prompt:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(236,72,153,.5)}
 .btn-txt-full{display:inline}
@@ -2968,7 +2968,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto
 .main-btn:active{transform:scale(0.97)}
 .main-btn-napcat{background:linear-gradient(135deg,#ec4899,#d946ef);color:#fff;box-shadow:0 4px 14px rgba(236,72,153,0.25)}
 .main-btn-nekro{background:linear-gradient(135deg,#fb7185,#ec4899);color:#fff;box-shadow:0 4px 14px rgba(251,113,133,0.25)}
-.main-btn-chat{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#f472b6,#e879f9,#f472b6);background-size:200% 200%;color:#fff;padding:10px 20px;border-radius:12px;font-size:.9rem;position:relative;animation:chatGlow 2.6s ease infinite;transition:transform .2s,box-shadow .2s;line-height:1;white-space:nowrap;width:116px;min-width:0}
+.main-btn-chat{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#f472b6,#e879f9,#f472b6);background-size:200% 200%;color:#fff;padding:10px 20px;border-radius:12px;font-size:.9rem;position:relative;animation:chatGlow 2.6s ease infinite;transition:transform .2s,box-shadow .2s;line-height:1;white-space:nowrap;width:auto;min-width:100px}
 @keyframes chatGlow{0%,100%{background-position:0% 50%;box-shadow:0 4px 14px rgba(244,114,182,.3)}50%{background-position:100% 50%;box-shadow:0 4px 22px rgba(244,114,182,.65)}}
 .main-btn-chat:hover{transform:scale(1.07);box-shadow:0 6px 26px rgba(244,114,182,.75)}.card-header-right{display:flex;align-items:center;gap:12px;flex-shrink:0;justify-content:flex-end}
 .sub-btns{display:flex;gap:6px;margin-bottom:14px}
@@ -3063,8 +3063,8 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
 .card-header-left>div .status-badge{padding:1px 7px;font-size:0.58rem;flex-shrink:0;line-height:1.5;white-space:nowrap}
 .bot-name{font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;flex-shrink:1}
 .card-header-right{display:flex;align-items:center;flex-shrink:0;gap:6px}
-.card-header-right .main-btn-chat{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 12px;font-size:.78rem;white-space:nowrap;margin-bottom:0;line-height:1;width:88px;min-width:0}
-.card-header-right .main-btn-prompt{margin-left:0;padding:8px 12px;font-size:.78rem;white-space:nowrap;margin-bottom:0;display:inline-flex;align-items:center;justify-content:center;gap:4px;line-height:1;width:88px;min-width:0}
+.card-header-right .main-btn-chat{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 12px;font-size:.78rem;white-space:nowrap;margin-bottom:0;line-height:1;width:auto;min-width:82px}
+.card-header-right .main-btn-prompt{margin-left:0;padding:8px 12px;font-size:.78rem;white-space:nowrap;margin-bottom:0;display:inline-flex;align-items:center;justify-content:center;gap:4px;line-height:1;width:auto;min-width:82px}
 .card-header-right .main-btn-vb{margin-left:0;padding:5px 8px;font-size:.68rem;white-space:nowrap;margin-bottom:0}
 .bot-avatar{width:40px;height:40px}
 .btn-txt-full{display:none}
@@ -3268,7 +3268,7 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
   border:none;box-shadow:0 4px 12px rgba(236,72,153,.35);
   font-size:0.9rem;padding:10px 20px;border-radius:12px;cursor:pointer;
   font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:all .2s;
-  margin-left:0;line-height:1;white-space:nowrap;width:116px;
+  margin-left:0;line-height:1;white-space:nowrap;width:auto;min-width:100px;
 }
 .main-btn-prompt:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(236,72,153,.5)}
 .main-btn-vb{

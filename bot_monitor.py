@@ -1909,7 +1909,7 @@ LOGIN_PAGE = r'''<!DOCTYPE html>
 <link rel="icon" href="/icon.svg">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#1a0a14;color:#fce7f3;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif;background:#1a0a14;color:#fce7f3;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
 .login-box{background:rgba(56,28,42,0.85);border:1px solid rgba(244,114,182,0.18);border-radius:16px;padding:36px 28px;max-width:340px;width:100%}
 .login-icon{width:72px;height:72px;margin:0 auto 16px;background:url(/icon.svg) center/contain no-repeat;border-radius:16px}
 .login-title{text-align:center;font-size:1.3rem;font-weight:700;background:linear-gradient(90deg,#f472b6,#e879f9,#fb7185);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:24px}
@@ -1986,7 +1986,7 @@ CHAT_PAGE = r'''<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif;
   background:
     radial-gradient(600px 400px at 15% 8%, rgba(168,85,247,0.28), transparent 60%),
     radial-gradient(500px 380px at 85% 90%, rgba(236,72,153,0.25), transparent 60%),
@@ -2859,7 +2859,7 @@ HTML_PAGE = r'''<!DOCTYPE html>
 <title>小栖bot</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#1a0a14;color:#fce7f3;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif;background:#1a0a14;color:#fce7f3;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
 .login-box{background:rgba(56,28,42,0.85);border:1px solid rgba(244,114,182,0.18);border-radius:16px;padding:36px 28px;max-width:340px;width:100%}
 .login-icon{width:72px;height:72px;margin:0 auto 16px;background:url(/icon.svg) center/contain no-repeat;border-radius:16px}
 .login-title{text-align:center;font-size:1.3rem;font-weight:700;background:linear-gradient(90deg,#f472b6,#e879f9,#fb7185);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:24px}

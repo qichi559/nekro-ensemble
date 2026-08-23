@@ -1461,6 +1461,24 @@ def _reset_visual_benchmark(bot_index):
         log(f"reset visual benchmark save error: {e}")
     return True
 
+def _get_visual_benchmarks_payload():
+    """GET 接口返回：每个角色的生效基准 + 是否被用户修改"""
+    merged = _get_visual_benchmarks()
+    out = []
+    for idx in sorted(merged.keys(), key=int):
+        d = merged[idx]
+        custom = _VB_CUSTOM.get(idx, {})
+        out.append({
+            "bot_index": int(idx),
+            "name": d.get("name", ""),
+            "role": d.get("role", ""),
+            "tags": d.get("tags", ""),
+            "fallback_positive": d.get("fallback_positive", ""),
+            "fallback_summary": d.get("fallback_summary", ""),
+            "modified": any(k in custom for k in ("role", "tags", "fallback_positive", "fallback_summary"))
+        })
+    return out
+
 def _get_candidate_llms_for_prompt():
     """获取当前可用于提炼生图 Prompt 的 LLM 候选列表 [(group_name, base_url, api_key, model), ...]，活跃组排第一"""
     candidates = []

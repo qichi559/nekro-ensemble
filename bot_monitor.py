@@ -1630,7 +1630,7 @@ Output strictly valid JSON:
                     ],
                     "temperature": 0.7
                 }
-                timeout_val = 35 if ("thinking" in model.lower() or "opus" in model.lower() or "claude" in model.lower()) else 15
+                timeout_val = 60
                 url = f"{base_url}/chat/completions"
                 req = urllib.request.Request(url, data=json.dumps(req_data).encode("utf-8"), headers={
                     "Content-Type": "application/json",

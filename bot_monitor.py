@@ -116,7 +116,7 @@ def get_bot_data_dir(bot_index):
         pass
     return ""
 
-MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/test-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context", "/api/tag-lib", "/api/tag-lib/add", "/api/tag-lib/delete", "/api/visual-benchmarks", "/api/visual-benchmarks/reset"}
+MONITOR_API_ROUTES = {"/api/status", "/api/refresh", "/api/container", "/api/nekro-go", "/api/nekro-back", "/api/kick-restart", "/api/service-control", "/api/note-sync-toggle", "/api/llm-mode", "/api/toggle-llm-mode", "/api/model-presets", "/api/apply-model", "/api/test-model", "/api/delete-model-group", "/api/create-model-group", "/api/fetch-models", "/api/qq-voice", "/api/chat/history", "/api/chat/status", "/api/chat/send", "/api/chat/tts", "/api/generate-prompt", "/api/chat/generate-prompt", "/api/chat-context", "/api/tag-lib", "/api/tag-lib/add", "/api/tag-lib/delete", "/api/tag-lib/import", "/api/visual-benchmarks", "/api/visual-benchmarks/reset"}
 
 def is_monitor_route(path):
     if path in MONITOR_API_ROUTES:
@@ -4822,6 +4822,46 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({"ok": ok, "msg": msg}, ensure_ascii=False).encode())
+            except Exception as e:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "msg": f"error: {e}"}, ensure_ascii=False).encode())
+        elif self.path == "/api/tag-lib/import":
+            try:
+                req = json.loads(body) if body else {}
+                data = req.get("data") or req
+                imported = 0
+                cats = data.get("categories", []) if isinstance(data, dict) else data
+                if not isinstance(cats, list):
+                    cats = []
+                for cat in cats:
+                    cname = (cat.get("name") or "自定义").strip()
+                    subs = cat.get("subcategories") or [{"name": "通用", "tags": cat.get("tags", [])}]
+                    for sub in subs:
+                        sname = (sub.get("name") or "通用").strip()
+                        for t in sub.get("tags", []) or []:
+                            if isinstance(t, str):
+                                en, zh = t, ""
+                            else:
+                                en = (t.get("en") or "").strip()
+                                zh = (t.get("zh") or "").strip()
+                            if en:
+                                ok, _ = _tag_lib_add(cname, sname, en, zh)
+                                if ok:
+                                    imported += 1
+                # 兼容魔导书 history/presets 的 tags 数组格式
+                tags_arr = data.get("tags", []) if isinstance(data, dict) else []
+                if isinstance(tags_arr, list):
+                    for t in tags_arr:
+                        if isinstance(t, str) and t.strip():
+                            ok, _ = _tag_lib_add("自定义", "通用", t.strip(), "")
+                            if ok:
+                                imported += 1
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "msg": f"导入完成，新增 {imported} 个标签"}, ensure_ascii=False).encode())
             except Exception as e:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

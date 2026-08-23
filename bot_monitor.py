@@ -3064,7 +3064,7 @@ body{padding:calc(12px + var(--safe-top)) 10px calc(12px + var(--safe-bottom))}
 .bot-name{font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;flex-shrink:1}
 .card-header-right{display:flex;align-items:center;flex-shrink:0;gap:4px}
 .card-header-right .main-btn-chat{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 11px;font-size:.76rem;white-space:nowrap;margin-bottom:0;line-height:1;width:max-content;min-width:0}
-.card-header-right .main-btn-prompt{margin-left:0;padding:5px 8px;font-size:.68rem;white-space:nowrap;margin-bottom:0}
+.card-header-right .main-btn-prompt{margin-left:0;padding:8px 12px;font-size:.78rem;white-space:nowrap;margin-bottom:0;display:inline-flex;align-items:center;justify-content:center;gap:4px;line-height:1;width:max-content;min-width:0}
 .card-header-right .main-btn-vb{margin-left:0;padding:5px 8px;font-size:.68rem;white-space:nowrap;margin-bottom:0}
 .bot-avatar{width:40px;height:40px}
 .btn-txt-full{display:none}

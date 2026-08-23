@@ -2463,6 +2463,38 @@ document.getElementById("messages").addEventListener("scroll",function(){
         </div>
         <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
       </div>
+      <div class="prompt-card" id="pm-vb-card">
+        <div class="prompt-card-header" style="cursor:pointer" onclick="toggleVbBody()">
+          <span class="prompt-card-title">📐 外貌基准 <span id="pm-vb-modified" style="font-size:0.62rem;color:#f0a6c9"></span></span>
+          <span style="display:flex;gap:6px" onclick="event.stopPropagation()">
+            <button class="prompt-copy-btn" id="pm-vb-edit-btn" onclick="enterVbEdit()">✏️ 编辑</button>
+            <button class="prompt-copy-btn" onclick="resetVbInline()" style="border-color:rgba(244,63,94,.4);color:#fda4af">↺ 默认</button>
+          </span>
+        </div>
+        <div class="prompt-summary-display" id="pm-vb-view" style="font-size:0.72rem;color:#be185d;line-height:1.5;white-space:pre-wrap;background:rgba(255,255,255,0.5);border-radius:6px;padding:6px 10px;max-height:120px;overflow-y:auto;display:none">...</div>
+        <div id="pm-vb-edit" style="display:none">
+          <div class="prompt-ctx-box">
+            <div class="prompt-ctx-label"><span>角色定位 (role)</span></div>
+            <input class="prompt-ctx-input" id="pm-vb-role" style="min-height:34px;max-height:34px" placeholder="例如：情感过敏症犬系依恋少女/合租人">
+          </div>
+          <div class="prompt-ctx-box" style="margin-top:8px">
+            <div class="prompt-ctx-label"><span>外貌基准 Tags（Danbooru 英文标签）</span></div>
+            <textarea class="prompt-ctx-input" id="pm-vb-tags" style="min-height:150px;max-height:220px" placeholder="- 核心外貌: 1girl, ...&#10;- 服饰: ...&#10;- 场景: ..."></textarea>
+          </div>
+          <div class="prompt-ctx-box" style="margin-top:8px">
+            <div class="prompt-ctx-label"><span>兜底正向词 (fallback_positive)</span></div>
+            <textarea class="prompt-ctx-input" id="pm-vb-fpos" style="min-height:80px;max-height:130px"></textarea>
+          </div>
+          <div class="prompt-ctx-box" style="margin-top:8px">
+            <div class="prompt-ctx-label"><span>兜底场景小传 (fallback_summary)</span></div>
+            <textarea class="prompt-ctx-input" id="pm-vb-fsum" style="min-height:50px;max-height:90px"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="prompt-gen-btn" style="flex:2" onclick="saveVbInline()">💾 保存基准</button>
+            <button class="prompt-copy-btn" style="flex:1;justify-content:center;padding:10px;font-size:0.8rem;border-radius:12px" onclick="cancelVbEdit()">取消</button>
+          </div>
+        </div>
+      </div>
       <div class="prompt-result-section" id="pm-result-box" style="display:none">
         <div class="prompt-card">
           <div class="prompt-card-header">
@@ -2531,6 +2563,7 @@ function openPromptModal(botIndex, prefilledContext) {
   } else {
     fetchChatContextPreview();
   }
+  renderVbSection();
 }
 
 function closePromptModal() {
@@ -2577,6 +2610,74 @@ function refreshChatContext() {
   if (ctxInput) ctxInput.value = "";
   fetchChatContextPreview();
 }
+var vbDataCache = {};
+function renderVbSection() {
+  var view = document.getElementById("pm-vb-view");
+  var modEl = document.getElementById("pm-vb-modified");
+  var editBox = document.getElementById("pm-vb-edit");
+  if (view) view.style.display = "none";
+  if (modEl) modEl.textContent = "";
+  if (editBox) editBox.style.display = "none";
+  fetch("/api/visual-benchmarks").then(function(r) { return r.json(); }).then(function(d) {
+    var items = d.benchmarks || [];
+    var cur = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].bot_index === currentPromptBot) { cur = items[i]; break; }
+    }
+    if (!cur) return;
+    vbDataCache[currentPromptBot] = cur;
+    var name = cur.name || ("Bot " + currentPromptBot);
+    if (modEl) modEl.textContent = cur.modified ? "（已自定义）" : "（内置默认）";
+    var text = "【" + name + " · " + (cur.role || "") + "】\n" + (cur.tags || "");
+    if (view) { view.textContent = text; view.style.display = "block"; }
+  }).catch(function() { showToast("外貌基准加载失败", "error"); });
+}
+function toggleVbBody() {
+  var view = document.getElementById("pm-vb-view");
+  if (view) view.style.display = view.style.display === "none" ? "block" : "none";
+}
+function enterVbEdit() {
+  var cur = vbDataCache[currentPromptBot];
+  if (!cur) { showToast("基准尚未加载，请稍候", "error"); return; }
+  document.getElementById("pm-vb-role").value = cur.role || "";
+  document.getElementById("pm-vb-tags").value = cur.tags || "";
+  document.getElementById("pm-vb-fpos").value = cur.fallback_positive || "";
+  document.getElementById("pm-vb-fsum").value = cur.fallback_summary || "";
+  document.getElementById("pm-vb-view").style.display = "none";
+  document.getElementById("pm-vb-edit").style.display = "block";
+}
+function cancelVbEdit() {
+  document.getElementById("pm-vb-edit").style.display = "none";
+  var view = document.getElementById("pm-vb-view");
+  if (view) view.style.display = "block";
+}
+function saveVbInline() {
+  var data = {
+    role: document.getElementById("pm-vb-role").value,
+    tags: document.getElementById("pm-vb-tags").value,
+    fallback_positive: document.getElementById("pm-vb-fpos").value,
+    fallback_summary: document.getElementById("pm-vb-fsum").value
+  };
+  fetch("/api/visual-benchmarks", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({bot_index: currentPromptBot, data: data})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    showToast(d.msg || (d.ok ? "已保存" : "保存失败"), d.ok ? "success" : "error");
+    if (d.ok) { cancelVbEdit(); renderVbSection(); }
+  }).catch(function(e) { showToast("请求失败: " + e.message, "error"); });
+}
+function resetVbInline() {
+  if (!confirm("确认恢复该角色的内置默认外貌基准？当前自定义内容将被清空。")) return;
+  fetch("/api/visual-benchmarks/reset", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({bot_index: currentPromptBot})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    showToast(d.msg || (d.ok ? "已恢复默认" : "重置失败"), d.ok ? "success" : "error");
+    if (d.ok) { cancelVbEdit(); renderVbSection(); }
+  }).catch(function(e) { showToast("请求失败: " + e.message, "error"); });
+}
 
 function switchPromptBot(botIndex) {
   currentPromptBot = botIndex;
@@ -2589,6 +2690,7 @@ function switchPromptBot(botIndex) {
   var resultBox = document.getElementById("pm-result-box");
   if (resultBox) resultBox.style.display = "none";
   fetchChatContextPreview();
+  renderVbSection();
 }
 
 function executeGeneratePrompt() {
@@ -3228,7 +3330,7 @@ function initSections(){var sections=["sec-sys","sec-model","sec-bots","sec-nav"
 function setSummary(id,text){var el=document.getElementById(id);if(el)el.textContent=text}
 function setSectionHealth(id,healthy){var el=document.getElementById(id);if(!el)return;el.classList.remove("healthy","warning");el.classList.add(healthy?"healthy":"warning")}
 function renderSystem(sys){var memPct=parseFloat(sys.mem_pct);var memClass=isNaN(memPct)?"":(memPct<50?"":memPct<80?"warn":"danger");document.getElementById("sys-bar").innerHTML='<div class="sys-item"><div class="sys-label">服务器时间</div><div class="sys-value">'+esc(sys.time)+'</div></div><div class="sys-item"><div class="sys-label">CPU</div><div class="sys-value">'+esc(sys.cpu)+'</div></div><div class="sys-item"><div class="sys-label">内存</div><div class="sys-value '+memClass+'">'+esc(sys.mem)+' ('+esc(sys.mem_pct)+')</div></div><div class="sys-item"><div class="sys-label">磁盘</div><div class="sys-value">'+esc(sys.disk)+'</div></div>'}
-function renderBot(bot,index){var statusClass=bot.online===true?"online":bot.online===false?"offline":"unknown";var statusBadge=bot.online===true?"status-online":bot.online===false?"status-offline":"status-unknown";var napcatMemPct=(bot.napcat_stats.mem_pct||"").replace("%","").trim();var nekroMemPct=(bot.nekro_stats.mem_pct||"").replace("%","").trim();var connClass=bot.nekro_conn==="已连接"?"green":bot.nekro_conn==="已断开"?"red":"yellow";var napcatC=esc(bot.napcat_container);var nekroC=esc(bot.nekro_container);var html="";var avatarUrl=avUrl(esc(bot.qq),640);html+='<div class="bot-card '+statusClass+'">';html+='<div class="card-header"><div class="card-header-left"><img class="bot-avatar" src="'+avatarUrl+'" onerror="this.style.display=\'none\'"><div><span class="bot-name">'+esc(bot.preset_name||bot.role)+'</span><span class="status-badge '+statusBadge+'">'+esc(bot.online_msg)+'</span></div></div><div class="card-header-right"><a href="/chat?bot='+(index+1)+'" target="_blank" class="main-btn main-btn-chat">💬 聊天</a><button onclick="openPromptModal('+(index+1)+')" class="main-btn main-btn-prompt"><span class="btn-txt-full">🎨 生图Prompt</span><span class="btn-txt-short">🎨 生图</span></button><button onclick="openVbModal('+(index+1)+')" class="main-btn main-btn-vb" title="编辑角色外貌基准"><span class="btn-txt-full">📐 外貌基准</span><span class="btn-txt-short">📐 基准</span></button></div></div>';html+='<div class="bot-sub open" id="bs-mon-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-mon-'+index+'\')"><span>监控</span><span class="bot-sub-arrow">▾</span></div><div class="bot-sub-b">';html+='<div class="info-section"><div class="section-title">NapCat</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.napcat_running?"green":"red")+'">'+(bot.napcat_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.napcat_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(napcatMemPct)+'">'+esc(bot.napcat_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(napcatMemPct)+'" style="width:'+(napcatMemPct||0)+'%"></div></div></div>';html+='<div class="info-section"><div class="section-title">NekroAgent</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.nekro_running?"green":"red")+'">'+(bot.nekro_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">OneBot</span><span class="value '+connClass+'">'+esc(bot.nekro_conn)+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.nekro_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(nekroMemPct)+'">'+esc(bot.nekro_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(nekroMemPct)+'" style="width:'+(nekroMemPct||0)+'%"></div></div></div>';var kickOn=bot.kick_restart!==false;html+='<div class="guard-toggle"><span class="guard-label">踢下线自动重启NapCat</span><div class="guard-switch'+(kickOn?" on":"")+'" onclick="toggleKickRestart('+index+',this)"></div></div>';var voiceOn=voiceSwitchStates[index]!==false;html+='<div class="guard-toggle"><span class="guard-label">QQ 语音回复</span><div class="guard-switch'+(voiceOn?" on":"")+'" id="voice-switch-'+index+'" onclick="toggleVoiceSwitch('+index+',this)"></div></div>';html+='<div style="margin-top:6px"><a href="'+esc(bot.napcat_url)+'" target="_blank" class="main-btn main-btn-napcat">NapCat</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+napcatC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+napcatC+'\',\'restart\')">重启</button>';if(bot.napcat_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+napcatC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+napcatC+'\',\'start\')">启动</button>';html+='</div></div>';html+='<div style="margin-top:6px"><a href="javascript:void(0)" onclick="openNekro('+index+')" class="main-btn main-btn-nekro">NekroAgent</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+nekroC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+nekroC+'\',\'restart\')">重启</button>';if(bot.nekro_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+nekroC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+nekroC+'\',\'start\')">启动</button>';html+='</div></div>';html+='</div></div>';html+='<div class="bot-sub" id="bs-br-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-br-'+index+'\')"><span>桥接</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-br-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-tts-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-tts-'+index+'\')"><span>音色</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-tts-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-note-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-note-'+index+'\')"><span>笔记</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-note-b-'+index+'"></div></div>';if(index===DEVICE_BOT_INDEX){html+='<div class="bot-sub" id="bs-dev-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-dev-'+index+'\')"><span>设备</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-dev-b-'+index+'"></div></div>'}html+='</div>';return html}
+function renderBot(bot,index){var statusClass=bot.online===true?"online":bot.online===false?"offline":"unknown";var statusBadge=bot.online===true?"status-online":bot.online===false?"status-offline":"status-unknown";var napcatMemPct=(bot.napcat_stats.mem_pct||"").replace("%","").trim();var nekroMemPct=(bot.nekro_stats.mem_pct||"").replace("%","").trim();var connClass=bot.nekro_conn==="已连接"?"green":bot.nekro_conn==="已断开"?"red":"yellow";var napcatC=esc(bot.napcat_container);var nekroC=esc(bot.nekro_container);var html="";var avatarUrl=avUrl(esc(bot.qq),640);html+='<div class="bot-card '+statusClass+'">';html+='<div class="card-header"><div class="card-header-left"><img class="bot-avatar" src="'+avatarUrl+'" onerror="this.style.display=\'none\'"><div><span class="bot-name">'+esc(bot.preset_name||bot.role)+'</span><span class="status-badge '+statusBadge+'">'+esc(bot.online_msg)+'</span></div></div><div class="card-header-right"><a href="/chat?bot='+(index+1)+'" target="_blank" class="main-btn main-btn-chat">💬 聊天</a><button onclick="openPromptModal('+(index+1)+')" class="main-btn main-btn-prompt"><span class="btn-txt-full">🎨 生图Prompt</span><span class="btn-txt-short">🎨 生图</span></button></div></div>';html+='<div class="bot-sub open" id="bs-mon-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-mon-'+index+'\')"><span>监控</span><span class="bot-sub-arrow">▾</span></div><div class="bot-sub-b">';html+='<div class="info-section"><div class="section-title">NapCat</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.napcat_running?"green":"red")+'">'+(bot.napcat_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.napcat_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(napcatMemPct)+'">'+esc(bot.napcat_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(napcatMemPct)+'" style="width:'+(napcatMemPct||0)+'%"></div></div></div>';html+='<div class="info-section"><div class="section-title">NekroAgent</div><div class="info-row"><span class="label">运行</span><span class="value '+(bot.nekro_running?"green":"red")+'">'+(bot.nekro_running?"运行中":"已停止")+'</span></div><div class="info-row"><span class="label">OneBot</span><span class="value '+connClass+'">'+esc(bot.nekro_conn)+'</span></div><div class="info-row"><span class="label">CPU</span><span class="value">'+esc(bot.nekro_stats.cpu)+'</span></div><div class="info-row"><span class="label">内存</span><span class="value '+getMemClass(nekroMemPct)+'">'+esc(bot.nekro_stats.mem)+'</span></div><div class="progress-bar"><div class="progress-fill '+getProgressClass(nekroMemPct)+'" style="width:'+(nekroMemPct||0)+'%"></div></div></div>';var kickOn=bot.kick_restart!==false;html+='<div class="guard-toggle"><span class="guard-label">踢下线自动重启NapCat</span><div class="guard-switch'+(kickOn?" on":"")+'" onclick="toggleKickRestart('+index+',this)"></div></div>';var voiceOn=voiceSwitchStates[index]!==false;html+='<div class="guard-toggle"><span class="guard-label">QQ 语音回复</span><div class="guard-switch'+(voiceOn?" on":"")+'" id="voice-switch-'+index+'" onclick="toggleVoiceSwitch('+index+',this)"></div></div>';html+='<div style="margin-top:6px"><a href="'+esc(bot.napcat_url)+'" target="_blank" class="main-btn main-btn-napcat">NapCat</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+napcatC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+napcatC+'\',\'restart\')">重启</button>';if(bot.napcat_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+napcatC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+napcatC+'\',\'start\')">启动</button>';html+='</div></div>';html+='<div style="margin-top:6px"><a href="javascript:void(0)" onclick="openNekro('+index+')" class="main-btn main-btn-nekro">NekroAgent</a><div class="sub-btns"><button class="sub-btn sub-btn-log" onclick="viewLogs(\''+nekroC+'\')">日志</button><button class="sub-btn sub-btn-restart" onclick="ctrlContainer(\''+nekroC+'\',\'restart\')">重启</button>';if(bot.nekro_running)html+='<button class="sub-btn sub-btn-stop" onclick="ctrlContainer(\''+nekroC+'\',\'stop\')">停止</button>';else html+='<button class="sub-btn sub-btn-start" onclick="ctrlContainer(\''+nekroC+'\',\'start\')">启动</button>';html+='</div></div>';html+='</div></div>';html+='<div class="bot-sub" id="bs-br-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-br-'+index+'\')"><span>桥接</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-br-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-tts-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-tts-'+index+'\')"><span>音色</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-tts-b-'+index+'"></div></div>';html+='<div class="bot-sub" id="bs-note-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-note-'+index+'\')"><span>笔记</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-note-b-'+index+'"></div></div>';if(index===DEVICE_BOT_INDEX){html+='<div class="bot-sub" id="bs-dev-'+index+'"><div class="bot-sub-h" onclick="toggleBotSub(\'bs-dev-'+index+'\')"><span>设备</span><span class="bot-sub-arrow">▸</span></div><div class="bot-sub-b" id="bs-dev-b-'+index+'"></div></div>'}html+='</div>';return html}
 
 function loadModelGroups(){fetch("/api/model-presets").then(function(r){return r.json()}).then(function(d){modelGroups=d.groups||[];currentModel=d.current||"unknown";selectedModel=currentModel;_renderModelCard()}).catch(function(){})}function _renderModelCard(){var el=document.getElementById("model-section");if(!el)return;if(!modelGroups||!modelGroups.length){setSummary("summary-model","未配置");el.innerHTML='<div class="model-card"><div class="model-tip">暂无可用模型组，请先添加</div><div class="model-btns"><button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加模型组</button></div></div>';return}var cur=null;(modelGroups||[]).forEach(function(g){if(g.group_name===currentModel)cur=g});setSummary("summary-model",cur?cur.pretty:currentModel);var opts=(modelGroups||[]).map(function(g){var tip=[g.chat_model,g.base_url?g.base_url.replace(/^https?:\/\//,"").replace(/\/+$/,""):null].filter(Boolean).join(" · ");var sel=(g.group_name===(selectedModel||currentModel))?" selected":"";return '<option value="'+esc(g.group_name)+'"'+sel+' title="'+esc(tip)+'">'+esc(g.pretty||g.group_name)+'</option>'}).join("");var pending=selectedModel&&selectedModel!==currentModel;var applyBtn=pending?'<button class="model-btn model-btn-switch" id="model-apply-btn" onclick="applySelectedModel()">⚡ 应用</button>':'';el.innerHTML='<div class="model-card"><select class="model-select" id="model-select" onchange="selectModel(this.value)">'+opts+'</select><div class="model-btns">'+applyBtn+'<button class="model-btn model-btn-add" onclick="showAddModelGroup()">＋ 添加</button><button class="model-btn model-btn-del" onclick="deleteCurrentModelGroup()">－ 删除</button></div></div>'}
 function render(data){if(data.error&&(!data.bots||data.bots.length===0)){showError(data.error);return}document.getElementById("pulse-dot").className="pulse";document.getElementById("last-update").textContent="更新于 "+(data.system?data.system.time:"?");if(data.error){document.getElementById("error-box").innerHTML='<div class="warn-msg">部分异常: '+esc(data.error)+'</div>'}else{document.getElementById("error-box").innerHTML=''}if(data.system){renderSystem(data.system);setSummary("summary-sys","CPU "+esc(data.system.cpu)+" | 内存 "+esc(data.system.mem));var sysMemPct=parseFloat(data.system.mem_pct);setSectionHealth("sec-sys",isNaN(sysMemPct)||sysMemPct<80)}if(data.bots&&data.bots.length>0){document.getElementById("bots-grid").innerHTML=data.bots.map(renderBot).join("");var onlineCount=data.bots.filter(function(b){return b.online===true}).length;setSummary("summary-bots",onlineCount+"/"+data.bots.length+" 在线");setSectionHealth("sec-bots",onlineCount===data.bots.length);data.bots.forEach(function(b,i){fillBotExtras(b,i,data.note_sync)})}else{document.getElementById("bots-grid").innerHTML='<div style="color:#c084a8;text-align:center;padding:40px">暂无数据</div>';setSummary("summary-bots","0/0 在线");setSectionHealth("sec-bots",false)}renderDevice(data.device);renderNavLinks(data.extra_nav);loadVoiceSwitch();setSectionHealth("sec-nav",true)}
@@ -3281,11 +3383,6 @@ function fillBotExtras(bot,index,noteSync){var brEl=document.getElementById("bs-
 function renderDevice(device){var el=document.getElementById("bs-dev-b-"+DEVICE_BOT_INDEX);if(!el)return;if(!device){el.innerHTML='<div class="svc-row"><span class="label">状态</span><span class="value">无数据</span></div>';return}var running=device.running;var llmMode=device.llm_mode||"unknown";var modeText=llmMode==="nekro"?"NekroAgent":llmMode==="direct"?"直连LLM":"未知";var html='<div class="info-section"><div class="section-title">小智设备 (stackchan)</div><div class="info-row"><span class="label">状态</span><span class="value '+(running?"green":"red")+'">'+(running?"运行中":"已停止")+'</span></div><div class="guard-toggle"><span class="guard-label">LLM模式：'+modeText+'</span><div class="guard-switch'+(llmMode==="nekro"?" on":"")+'" id="llm-mode-switch" onclick="toggleLLMMode()" title="点击切换LLM模式"></div></div></div>';document.getElementById("bs-dev-b-"+DEVICE_BOT_INDEX).innerHTML=html}
 function renderNavLinks(navLinks){if(!navLinks||navLinks.length===0){document.getElementById("extra-nav-section").innerHTML="";setSummary("summary-nav","");return}setSummary("summary-nav",navLinks.length+"个链接");var html='<div class="nav-grid">';navLinks.forEach(function(nav){var colorClass=nav.name.indexOf("酒馆")>=0?"nav-btn-tavern":nav.name.indexOf("面板")>=0?"nav-btn-panel":"main-btn-napcat";html+='<a href="'+esc(nav.url)+'" target="_blank" class="nav-btn '+colorClass+'">'+esc(nav.name)+'</a>'});html+='</div>';document.getElementById("extra-nav-section").innerHTML=html}
 function ctrlService(service,action){var am={"start":"启动","stop":"停止","restart":"重启"};if(!confirm("确认"+(am[action]||action)+" 服务 "+service+" ?"))return;showToast("正在"+(am[action]||action)+" "+service+"...","");fetch("/api/service-control",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({service:service,action:action})}).then(function(res){return res.json()}).then(function(data){if(data.ok){showToast(data.msg,"success");setTimeout(loadData,3000)}else{showToast(data.msg||"操作失败","error")}}).catch(function(err){showToast("请求失败: "+err.message,"error")})}
-var vbModalBot=1;
-function openVbModal(botIndex){vbModalBot=botIndex;document.getElementById("vb-modal").classList.add("active");document.getElementById("vb-modal-title").textContent="角色外貌基准 · Bot "+botIndex;document.getElementById("vb-name").textContent="加载中...";fetch("/api/visual-benchmarks").then(function(r){return r.json()}).then(function(d){var items=d.benchmarks||[];var cur=null;for(var i=0;i<items.length;i++){if(items[i].bot_index===botIndex){cur=items[i];break}}if(!cur){showToast("未找到该角色的基准","error");return}document.getElementById("vb-name").textContent=cur.name+(cur.modified?"（已自定义）":"（内置默认）");document.getElementById("vb-role").value=cur.role||"";document.getElementById("vb-tags").value=cur.tags||"";document.getElementById("vb-fpos").value=cur.fallback_positive||"";document.getElementById("vb-fsum").value=cur.fallback_summary||""}).catch(function(){showToast("加载基准失败","error")})}
-function closeVbModal(){document.getElementById("vb-modal").classList.remove("active")}
-function saveVb(){var data={role:document.getElementById("vb-role").value,tags:document.getElementById("vb-tags").value,fallback_positive:document.getElementById("vb-fpos").value,fallback_summary:document.getElementById("vb-fsum").value};fetch("/api/visual-benchmarks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bot_index:vbModalBot,data:data})}).then(function(r){return r.json()}).then(function(d){showToast(d.msg||(d.ok?"已保存":"保存失败"),d.ok?"success":"error");if(d.ok)closeVbModal()}).catch(function(e){showToast("请求失败: "+e.message,"error")})}
-function resetVb(){if(!confirm("确认恢复该角色的内置默认外貌基准？当前自定义内容将被清空。"))return;fetch("/api/visual-benchmarks/reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bot_index:vbModalBot})}).then(function(r){return r.json()}).then(function(d){showToast(d.msg||(d.ok?"已恢复默认":"重置失败"),d.ok?"success":"error");if(d.ok)openVbModal(vbModalBot)}).catch(function(e){showToast("请求失败: "+e.message,"error")})}
 initSections();
 loadModelGroups();
 loadData();
@@ -3329,6 +3426,38 @@ function pad(n){return n<10?"0"+n:n}
         </div>
         <div class="prompt-summary-display" id="pm-context-text" style="font-size:0.75rem;color:#be185d;max-height:90px;overflow-y:auto;white-space:pre-wrap;background:rgba(255,255,255,0.6);border-radius:6px;padding:6px 10px;line-height:1.45">...</div>
       </div>
+      <div class="prompt-card" id="pm-vb-card">
+        <div class="prompt-card-header" style="cursor:pointer" onclick="toggleVbBody()">
+          <span class="prompt-card-title">📐 外貌基准 <span id="pm-vb-modified" style="font-size:0.62rem;color:#f0a6c9"></span></span>
+          <span style="display:flex;gap:6px" onclick="event.stopPropagation()">
+            <button class="prompt-copy-btn" id="pm-vb-edit-btn" onclick="enterVbEdit()">✏️ 编辑</button>
+            <button class="prompt-copy-btn" onclick="resetVbInline()" style="border-color:rgba(244,63,94,.4);color:#fda4af">↺ 默认</button>
+          </span>
+        </div>
+        <div class="prompt-summary-display" id="pm-vb-view" style="font-size:0.72rem;color:#be185d;line-height:1.5;white-space:pre-wrap;background:rgba(255,255,255,0.5);border-radius:6px;padding:6px 10px;max-height:120px;overflow-y:auto;display:none">...</div>
+        <div id="pm-vb-edit" style="display:none">
+          <div class="prompt-ctx-box">
+            <div class="prompt-ctx-label"><span>角色定位 (role)</span></div>
+            <input class="prompt-ctx-input" id="pm-vb-role" style="min-height:34px;max-height:34px" placeholder="例如：情感过敏症犬系依恋少女/合租人">
+          </div>
+          <div class="prompt-ctx-box" style="margin-top:8px">
+            <div class="prompt-ctx-label"><span>外貌基准 Tags（Danbooru 英文标签）</span></div>
+            <textarea class="prompt-ctx-input" id="pm-vb-tags" style="min-height:150px;max-height:220px" placeholder="- 核心外貌: 1girl, ...&#10;- 服饰: ...&#10;- 场景: ..."></textarea>
+          </div>
+          <div class="prompt-ctx-box" style="margin-top:8px">
+            <div class="prompt-ctx-label"><span>兜底正向词 (fallback_positive)</span></div>
+            <textarea class="prompt-ctx-input" id="pm-vb-fpos" style="min-height:80px;max-height:130px"></textarea>
+          </div>
+          <div class="prompt-ctx-box" style="margin-top:8px">
+            <div class="prompt-ctx-label"><span>兜底场景小传 (fallback_summary)</span></div>
+            <textarea class="prompt-ctx-input" id="pm-vb-fsum" style="min-height:50px;max-height:90px"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="prompt-gen-btn" style="flex:2" onclick="saveVbInline()">💾 保存基准</button>
+            <button class="prompt-copy-btn" style="flex:1;justify-content:center;padding:10px;font-size:0.8rem;border-radius:12px" onclick="cancelVbEdit()">取消</button>
+          </div>
+        </div>
+      </div>
       <div class="prompt-result-section" id="pm-result-box" style="display:none">
         <div class="prompt-card">
           <div class="prompt-card-header">
@@ -3369,46 +3498,6 @@ function pad(n){return n<10?"0"+n:n}
       </div>
     </div>
   </div>
-<div class="prompt-modal-overlay" id="vb-modal" onclick="if(event.target===this)closeVbModal()">
-  <div class="prompt-modal">
-    <div class="prompt-header">
-      <div class="prompt-header-title">
-        <span>📐</span>
-        <span id="vb-modal-title">角色外貌基准</span>
-      </div>
-      <button class="prompt-close-btn" onclick="closeVbModal()">✕</button>
-    </div>
-    <div class="prompt-body">
-      <div class="prompt-card" style="margin-bottom:10px">
-        <div class="prompt-card-header">
-          <span class="prompt-card-title">👤 <span id="vb-name">角色</span></span>
-          <button class="prompt-copy-btn" onclick="resetVb()" style="border-color:rgba(244,63,94,.4);color:#fda4af">↺ 恢复默认</button>
-        </div>
-        <div style="font-size:0.68rem;color:#c084a8;line-height:1.5">修改保存后立即生效，无需重启；「外貌基准」是生图提炼时发给 LLM 的角色视觉锚点，场景动作仍取自最新聊天。</div>
-      </div>
-      <div class="prompt-ctx-box">
-        <div class="prompt-ctx-label"><span>角色定位 (role)</span></div>
-        <input class="prompt-ctx-input" id="vb-role" style="min-height:36px;max-height:36px" placeholder="例如：情感过敏症犬系依恋少女/合租人">
-      </div>
-      <div class="prompt-ctx-box" style="margin-top:10px">
-        <div class="prompt-ctx-label"><span>外貌基准 Tags（Danbooru 英文标签）</span></div>
-        <textarea class="prompt-ctx-input" id="vb-tags" style="min-height:230px;max-height:300px" placeholder="- 核心外貌: 1girl, ...&#10;- 服饰: ...&#10;- 场景: ..."></textarea>
-      </div>
-      <div class="prompt-ctx-box" style="margin-top:10px">
-        <div class="prompt-ctx-label"><span>兜底正向词 (fallback_positive)</span></div>
-        <textarea class="prompt-ctx-input" id="vb-fpos" style="min-height:110px;max-height:160px"></textarea>
-      </div>
-      <div class="prompt-ctx-box" style="margin-top:10px">
-        <div class="prompt-ctx-label"><span>兜底场景小传 (fallback_summary)</span></div>
-        <textarea class="prompt-ctx-input" id="vb-fsum" style="min-height:70px;max-height:110px"></textarea>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="prompt-gen-btn" style="flex:2" onclick="saveVb()">💾 保存基准</button>
-        <button class="prompt-copy-btn" style="flex:1;justify-content:center;padding:10px;font-size:0.82rem;border-radius:12px" onclick="closeVbModal()">关闭</button>
-      </div>
-    </div>
-  </div>
-</div>
 </div>
 
 <script>
@@ -3437,6 +3526,7 @@ function openPromptModal(botIndex, prefilledContext) {
   } else {
     fetchChatContextPreview();
   }
+  renderVbSection();
 }
 
 function closePromptModal() {
@@ -3483,6 +3573,74 @@ function refreshChatContext() {
   if (ctxInput) ctxInput.value = "";
   fetchChatContextPreview();
 }
+var vbDataCache = {};
+function renderVbSection() {
+  var view = document.getElementById("pm-vb-view");
+  var modEl = document.getElementById("pm-vb-modified");
+  var editBox = document.getElementById("pm-vb-edit");
+  if (view) view.style.display = "none";
+  if (modEl) modEl.textContent = "";
+  if (editBox) editBox.style.display = "none";
+  fetch("/api/visual-benchmarks").then(function(r) { return r.json(); }).then(function(d) {
+    var items = d.benchmarks || [];
+    var cur = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].bot_index === currentPromptBot) { cur = items[i]; break; }
+    }
+    if (!cur) return;
+    vbDataCache[currentPromptBot] = cur;
+    var name = cur.name || ("Bot " + currentPromptBot);
+    if (modEl) modEl.textContent = cur.modified ? "（已自定义）" : "（内置默认）";
+    var text = "【" + name + " · " + (cur.role || "") + "】\n" + (cur.tags || "");
+    if (view) { view.textContent = text; view.style.display = "block"; }
+  }).catch(function() { showToast("外貌基准加载失败", "error"); });
+}
+function toggleVbBody() {
+  var view = document.getElementById("pm-vb-view");
+  if (view) view.style.display = view.style.display === "none" ? "block" : "none";
+}
+function enterVbEdit() {
+  var cur = vbDataCache[currentPromptBot];
+  if (!cur) { showToast("基准尚未加载，请稍候", "error"); return; }
+  document.getElementById("pm-vb-role").value = cur.role || "";
+  document.getElementById("pm-vb-tags").value = cur.tags || "";
+  document.getElementById("pm-vb-fpos").value = cur.fallback_positive || "";
+  document.getElementById("pm-vb-fsum").value = cur.fallback_summary || "";
+  document.getElementById("pm-vb-view").style.display = "none";
+  document.getElementById("pm-vb-edit").style.display = "block";
+}
+function cancelVbEdit() {
+  document.getElementById("pm-vb-edit").style.display = "none";
+  var view = document.getElementById("pm-vb-view");
+  if (view) view.style.display = "block";
+}
+function saveVbInline() {
+  var data = {
+    role: document.getElementById("pm-vb-role").value,
+    tags: document.getElementById("pm-vb-tags").value,
+    fallback_positive: document.getElementById("pm-vb-fpos").value,
+    fallback_summary: document.getElementById("pm-vb-fsum").value
+  };
+  fetch("/api/visual-benchmarks", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({bot_index: currentPromptBot, data: data})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    showToast(d.msg || (d.ok ? "已保存" : "保存失败"), d.ok ? "success" : "error");
+    if (d.ok) { cancelVbEdit(); renderVbSection(); }
+  }).catch(function(e) { showToast("请求失败: " + e.message, "error"); });
+}
+function resetVbInline() {
+  if (!confirm("确认恢复该角色的内置默认外貌基准？当前自定义内容将被清空。")) return;
+  fetch("/api/visual-benchmarks/reset", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({bot_index: currentPromptBot})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    showToast(d.msg || (d.ok ? "已恢复默认" : "重置失败"), d.ok ? "success" : "error");
+    if (d.ok) { cancelVbEdit(); renderVbSection(); }
+  }).catch(function(e) { showToast("请求失败: " + e.message, "error"); });
+}
 
 function switchPromptBot(botIndex) {
   currentPromptBot = botIndex;
@@ -3495,6 +3653,7 @@ function switchPromptBot(botIndex) {
   var resultBox = document.getElementById("pm-result-box");
   if (resultBox) resultBox.style.display = "none";
   fetchChatContextPreview();
+  renderVbSection();
 }
 
 function executeGeneratePrompt() {

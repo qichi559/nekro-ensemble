@@ -964,7 +964,11 @@ def get_current_model():
         txt = run_cmd(f"cat {p}", timeout=5) or ""
         m = re.search(r"USE_MODEL_GROUP:\s*(.+)", txt)
         if m:
-            return m.group(1).strip().split(" #")[0].strip()
+            val = m.group(1).strip().split(" #")[0].strip()
+            # YAML 值可能带引号（'2.5' / "2.5"），剥掉避免与模型组名不匹配
+            if len(val) >= 2 and val[0] in ("'", '"') and val[-1] == val[0]:
+                val = val[1:-1]
+            return val
     return "unknown"
 
 
